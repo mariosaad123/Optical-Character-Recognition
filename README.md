@@ -53,7 +53,19 @@ because the official transcripts are upper-cased):
 | Our model + enhancement | 89.19% | 34.22% | 75.25% |
 | **Full pipeline** | **91.91%** | **25.06%** | **81.57%** |
 
-Full tables: `results/v2_test/RESULTS.md`, `results/real_test/RESULTS.md`.
+**Original v1 test** (the first benchmark of this project, 300 images):
+
+| System | clean | medium | hard | overall | WER |
+|---|---|---|---|---|---|
+| Tesseract (default) | 99.87% | 97.71% | 42.81% | 80.13% | 42.61% |
+| First router (Tesseract -> RapidOCR) | 99.87% | 98.11% | 63.18% | 87.05% | 24.26% |
+| **Full pipeline** | 99.86% | **99.93%** | **92.01%** | **97.27%** | **8.49%** |
+
+Caveat: v1 uses the system fonts and the random document-style text generator that are also part of
+our model's training data, so it is easier for our model than v2 or the real receipts. Use v2 and the
+real receipts to judge generalization.
+
+Full tables: `results/v2_test/RESULTS.md`, `results/real_test/RESULTS.md`, `results/v1_test/RESULTS.md`.
 
 ## Setup
 
