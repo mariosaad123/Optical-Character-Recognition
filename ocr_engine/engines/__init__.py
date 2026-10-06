@@ -6,6 +6,12 @@ def get_engine(name: str) -> OCREngine:
     if name == "tesseract":
         from .tesseract_engine import TesseractEngine
         return TesseractEngine()
+    if name.startswith("tesseract-"):  # e.g. tesseract-eng_best, tesseract-eng_ft
+        from .tesseract_engine import TesseractEngine
+        return TesseractEngine(name.split("-", 1)[1])
+    if name == "pipeline":
+        from ..pipeline import PipelineEngine
+        return PipelineEngine()
     if name == "rapidocr":
         from .rapidocr_engine import RapidOCREngine
         return RapidOCREngine()
@@ -15,4 +21,4 @@ def get_engine(name: str) -> OCREngine:
     raise ValueError(f"Unknown engine: {name}")
 
 
-ENGINES = ["tesseract", "rapidocr", "router"]
+ENGINES = ["tesseract", "rapidocr", "router", "pipeline"]

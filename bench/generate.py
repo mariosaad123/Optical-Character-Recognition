@@ -4,8 +4,13 @@ Renders text with many fonts and three degradation levels (clean / medium / hard
 Because we render the text ourselves, the ground truth is exact and the cost is zero.
 Output is deterministic for a given --seed.
 
+v1: random document-style word sequences, system fonts (the original benchmark).
+v2: real prose from held-out public-domain books mixed with document lines, held-out font families,
+    and a richer degradation model (perspective, ink bleed, paper texture, motion blur).
+
 Usage:
     python -m bench.generate --out data/bench_en --per-level 100
+    python -m bench.generate --version v2 --split test --out data/bench_en_v2 --per-level 150 --seed 2024
 """
 
 import argparse
@@ -15,8 +20,11 @@ import random
 import subprocess
 from pathlib import Path
 
+import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+from bench import resources
 
 LEVELS = ["clean", "medium", "hard"]
 
@@ -76,8 +84,21 @@ def find_fonts() -> list[str]:
     return fonts
 
 
-def render(lines: list[str], font_path: str, size: int, rng: random.Random) -> Image.Image:
+def load_font(font_path: str, size: int, rng: random.Random | None = None) -> ImageFont.FreeTypeFont:
+    """Load a font; for variable fonts, pick a random named instance (weight/width) when rng is given."""
     font = ImageFont.truetype(font_path, size)
+    if rng is not None:
+        try:
+            names = [n for n in font.get_variation_names() if b"Thin" not in n and b"Hairline" not in n]
+            if names:
+                font.set_variation_by_name(rng.choice(names))
+        except OSError:
+            pass  # not a variable font
+    return font
+
+
+def render(lines: list[str], font_path: str, size: int, rng: random.Random, vary: bool = False) -> Image.Image:
+    font = load_font(font_path, size, rng if vary else None)
     spacing = int(size * rng.uniform(0.25, 0.6))
     ink = rng.randint(0, 60)
     paper = rng.randint(225, 255)
@@ -95,7 +116,7 @@ def render(lines: list[str], font_path: str, size: int, rng: random.Random) -> I
     return img
 
 
-def degrade(img: Image.Image, level: str, rng: random.Random) -> Image.Image:
+def degrade(img: Image.Image, level: str, rng: random.Random, max_angle: float | None = None) -> Image.Image:
     if level == "clean":
         return img
     strong = level == "hard"
@@ -103,6 +124,8 @@ def degrade(img: Image.Image, level: str, rng: random.Random) -> Image.Image:
 
     # rotation (scan skew)
     angle = rng.uniform(-3.0, 3.0) if strong else rng.uniform(-1.0, 1.0)
+    if max_angle is not None:
+        angle = max(-max_angle, min(max_angle, angle))
     img = img.rotate(angle, resample=Image.BICUBIC, expand=True, fillcolor=int(np.median(np.asarray(img))))
 
     # resolution loss (low-DPI scan / phone photo)
@@ -133,6 +156,66 @@ def degrade(img: Image.Image, level: str, rng: random.Random) -> Image.Image:
     return Image.open(io.BytesIO(buf.getvalue())).convert("L")
 
 
+def degrade_v2(img: Image.Image, level: str, rng: random.Random, max_angle: float | None = None) -> Image.Image:
+    """v1 degradations plus perspective, ink thickness, paper texture and motion blur."""
+    if level == "clean":
+        return img if rng.random() < 0.7 else degrade(img, "medium", random.Random(rng.random()), max_angle)
+    strong = level == "hard"
+    arr = np.asarray(img)
+    np_rng = np.random.default_rng(rng.randint(0, 2**32 - 1))
+    bg = int(np.median(arr))
+
+    # ink thickness: thin (erode background = dilate ink) or bleed
+    if rng.random() < 0.5:
+        k = np.ones((2, 2), np.uint8)
+        arr = cv2.erode(arr, k) if rng.random() < 0.5 else cv2.dilate(arr, k)
+
+    # perspective (photo of a page)
+    if rng.random() < (0.7 if strong else 0.3):
+        h, w = arr.shape
+        d = (0.04 if strong else 0.015) * min(h, w) + (0.01 if strong else 0.004) * w
+        src = np.float32([[0, 0], [w, 0], [w, h], [0, h]])
+        dst = src + np_rng.uniform(-d, d, src.shape).astype(np.float32)
+        arr = cv2.warpPerspective(arr, cv2.getPerspectiveTransform(src, dst), (w, h), borderValue=bg)
+
+    # motion blur (hand shake)
+    if rng.random() < (0.4 if strong else 0.15):
+        k = rng.choice([3, 5]) if strong else 3
+        kernel = np.zeros((k, k), np.float32)
+        kernel[k // 2, :] = 1.0 / k
+        rot = cv2.getRotationMatrix2D((k / 2 - 0.5, k / 2 - 0.5), rng.uniform(0, 180), 1)
+        arr = cv2.filter2D(arr, -1, cv2.warpAffine(kernel, rot, (k, k)))
+
+    # paper texture
+    if rng.random() < 0.5:
+        tex = cv2.GaussianBlur(np_rng.normal(0, 1, arr.shape).astype(np.float32), (0, 0), rng.uniform(2, 6))
+        arr = np.clip(arr.astype(np.float32) + tex * (10 if strong else 5), 0, 255).astype(np.uint8)
+
+    return degrade(Image.fromarray(arr), level, rng, max_angle)
+
+
+def generate_v2(out_dir: Path, per_level: int, seed: int, split: str) -> None:
+    rng = random.Random(seed)
+    fonts = [f for f in resources.fonts_for(split) if split == "train" or not resources.is_handwriting(f)]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    manifest = []
+    for level in LEVELS:
+        for i in range(per_level):
+            n_lines = 1 if rng.random() < 0.3 else rng.randint(2, 8)
+            if rng.random() < 0.6:
+                lines = resources.prose_lines(rng, split, n_lines)
+            else:
+                lines = [make_line(rng) for _ in range(n_lines)]
+            font = rng.choice(fonts)
+            size = rng.randint(20, 40) if level != "hard" else rng.randint(16, 32)
+            img = degrade_v2(render(lines, font, size, rng, vary=True), level, rng)
+            name = f"{level}_{i:04d}.png"
+            img.save(out_dir / name)
+            manifest.append({"image": name, "level": level, "font": Path(font).name, "size": size, "text": "\n".join(lines)})
+    (out_dir / "manifest.jsonl").write_text("\n".join(json.dumps(m) for m in manifest) + "\n")
+    print(f"Wrote {len(manifest)} samples ({len(fonts)} {split} fonts) to {out_dir}")
+
+
 def generate(out_dir: Path, per_level: int, seed: int) -> None:
     rng = random.Random(seed)
     fonts = find_fonts()
@@ -157,8 +240,13 @@ def main():
     p.add_argument("--out", type=Path, default=Path("data/bench_en"))
     p.add_argument("--per-level", type=int, default=100)
     p.add_argument("--seed", type=int, default=1234)
+    p.add_argument("--version", choices=["v1", "v2"], default="v1")
+    p.add_argument("--split", choices=["train", "dev", "test"], default="test")
     a = p.parse_args()
-    generate(a.out, a.per_level, a.seed)
+    if a.version == "v1":
+        generate(a.out, a.per_level, a.seed)
+    else:
+        generate_v2(a.out, a.per_level, a.seed, a.split)
 
 
 if __name__ == "__main__":

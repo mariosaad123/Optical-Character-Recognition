@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from bench.metrics import cer, wer
+from bench.metrics import bow_f1, cer, wer
 from ocr_engine import ENGINES, get_engine
 
 
@@ -23,19 +23,20 @@ def evaluate(data_dir: Path, engine_names: list[str], limit: int | None):
     summary, predictions = {}, {}
     for name in engine_names:
         engine = get_engine(name)
-        per_level = defaultdict(lambda: {"cer": 0.0, "wer": 0.0, "n": 0})
+        per_level = defaultdict(lambda: {"cer": 0.0, "wer": 0.0, "bow": 0.0, "n": 0})
         preds, t0 = [], time.perf_counter()
         for s in samples:
             hyp = engine.recognize(Image.open(data_dir / s["image"]))
-            c, w = cer(s["text"], hyp), wer(s["text"], hyp)
+            c, w, b = cer(s["text"], hyp), wer(s["text"], hyp), bow_f1(s["text"], hyp)
             for key in (s["level"], "all"):
                 per_level[key]["cer"] += c
                 per_level[key]["wer"] += w
+                per_level[key]["bow"] += b
                 per_level[key]["n"] += 1
             preds.append({"image": s["image"], "ref": s["text"], "hyp": hyp, "cer": round(c, 4)})
         elapsed = time.perf_counter() - t0
         summary[name] = {
-            lvl: {"cer": v["cer"] / v["n"], "wer": v["wer"] / v["n"], "n": v["n"]} for lvl, v in per_level.items()
+            lvl: {k: v[k] / v["n"] for k in ("cer", "wer", "bow")} | {"n": v["n"]} for lvl, v in per_level.items()
         }
         summary[name]["sec_per_image"] = elapsed / max(1, len(samples))
         predictions[name] = preds
@@ -44,12 +45,12 @@ def evaluate(data_dir: Path, engine_names: list[str], limit: int | None):
 
 
 def to_markdown(summary: dict) -> str:
-    levels = ["clean", "medium", "hard", "all"]
-    head = "| Engine | " + " | ".join(f"{l} acc (1-CER)" for l in levels) + " | all WER | sec/img |"
-    rows = [head, "|" + "---|" * (len(levels) + 3)]
+    levels = [l for l in ("clean", "medium", "hard", "real") if any(l in s for s in summary.values())] + ["all"]
+    head = "| Engine | " + " | ".join(f"{l} acc (1-CER)" for l in levels) + " | all WER | all word F1 | sec/img |"
+    rows = [head, "|" + "---|" * (len(levels) + 4)]
     for name, s in summary.items():
         accs = " | ".join(f"{max(0.0, 1 - s[l]['cer']) * 100:.2f}%" if l in s else "-" for l in levels)
-        rows.append(f"| {name} | {accs} | {s['all']['wer'] * 100:.2f}% | {s['sec_per_image']:.2f} |")
+        rows.append(f"| {name} | {accs} | {s['all']['wer'] * 100:.2f}% | {s['all']['bow'] * 100:.2f}% | {s.get('sec_per_image', 0):.2f} |")
     return "\n".join(rows)
 
 

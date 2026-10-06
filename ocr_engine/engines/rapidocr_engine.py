@@ -18,28 +18,36 @@ class RapidOCREngine(OCREngine):
         self.ocr = RapidOCR(text_score=0.0, width_height_ratio=-1)
 
     def recognize(self, image: Image.Image) -> str:
+        return "\n".join(" ".join(w for w, _ in line) for line in self.recognize_words(image))
+
+    def recognize_words(self, image: Image.Image) -> list[list[tuple[str, float]]]:
+        """Lines of (word, confidence); RapidOCR scores whole boxes, so words inherit their box score."""
         rgb = np.array(image.convert("RGB"))
         result, _ = self.ocr(rgb)
         if not result:
-            return ""
+            return []
         items = []
         for box, text, score in result:
-            if float(score) < 0.5:
-                text = self._recognize_wide_line(rgb, box)
+            score = float(score)
+            if score < 0.5:
+                text, score = self._recognize_wide_line(rgb, box)
             if text:
-                items.append((box, text))
-        return "\n".join(_reading_order(items))
+                items.append((box, text, score))
+        return _reading_order(items)
 
-    def _recognize_wide_line(self, rgb: np.ndarray, box) -> str:
+    def _recognize_wide_line(self, rgb: np.ndarray, box) -> tuple[str, float]:
         xs, ys = [p[0] for p in box], [p[1] for p in box]
         x0, x1 = max(0, int(min(xs))), min(rgb.shape[1], int(max(xs)) + 1)
         y0, y1 = max(0, int(min(ys))), min(rgb.shape[0], int(max(ys)) + 1)
         crop = rgb[y0:y1, x0:x1]
         if crop.size == 0:
-            return ""
+            return "", 0.0
         pieces = [np.ascontiguousarray(crop[:, a:b]) for a, b in _split_at_gaps(crop, MAX_ASPECT * crop.shape[0])]
         rec, _ = self.ocr.text_recognizer(pieces)
-        return " ".join(t.strip() for t, s in rec if t.strip() and float(s) >= 0.5)
+        kept = [(t.strip(), float(s)) for t, s in rec if t.strip() and float(s) >= 0.5]
+        if not kept:
+            return "", 0.0
+        return " ".join(t for t, _ in kept), sum(s for _, s in kept) / len(kept)
 
 
 def _split_at_gaps(crop: np.ndarray, max_width: int) -> list[tuple[int, int]]:
@@ -64,13 +72,13 @@ def _split_at_gaps(crop: np.ndarray, max_width: int) -> list[tuple[int, int]]:
     return pieces
 
 
-def _reading_order(items) -> list[str]:
-    """Group boxes into lines (top-to-bottom), then sort each line left-to-right."""
+def _reading_order(items) -> list[list[tuple[str, float]]]:
+    """Group boxes into lines (top-to-bottom), sort each line left-to-right, split into scored words."""
     boxes = []
-    for box, text in items:
+    for box, text, score in items:
         ys = [p[1] for p in box]
         xs = [p[0] for p in box]
-        boxes.append((min(ys), max(ys), min(xs), text))
+        boxes.append((min(ys), max(ys), min(xs), text, score))
     boxes.sort(key=lambda b: (b[0] + b[1]) / 2)
 
     lines: list[list[tuple]] = []
@@ -84,4 +92,4 @@ def _reading_order(items) -> list[str]:
                 last.append(b)
                 continue
         lines.append([b])
-    return [" ".join(x[3] for x in sorted(line, key=lambda x: x[2])) for line in lines]
+    return [[(w, x[4]) for x in sorted(line, key=lambda x: x[2]) for w in x[3].split()] for line in lines]

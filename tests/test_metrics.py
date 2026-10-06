@@ -21,3 +21,9 @@ def test_word_error():
 def test_empty_reference():
     assert cer("", "") == 0.0
     assert cer("", "x") == 1.0
+
+
+def test_bow_f1_ignores_order():
+    from bench.metrics import bow_f1
+    assert bow_f1("a b c", "c b a") == 1.0
+    assert abs(bow_f1("a b c d", "a b") - 2 / 3) < 1e-9
