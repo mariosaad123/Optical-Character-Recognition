@@ -40,3 +40,11 @@ def bow_f1(reference: str, hypothesis: str) -> float:
         return 0.0
     precision, recall = tp / sum(hyp.values()), tp / sum(ref.values())
     return 2 * precision * recall / (precision + recall)
+
+
+def score(sample: dict, hypothesis: str) -> dict:
+    """All metrics for one benchmark sample (honours the manifest's case_insensitive flag)."""
+    ref = sample["text"]
+    if sample.get("case_insensitive"):
+        ref, hypothesis = ref.upper(), hypothesis.upper()
+    return {"cer": cer(ref, hypothesis), "wer": wer(ref, hypothesis), "bow": bow_f1(ref, hypothesis)}

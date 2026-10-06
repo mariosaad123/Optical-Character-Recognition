@@ -75,6 +75,52 @@ def make_line(rng: random.Random, min_words=4, max_words=11) -> str:
     return line + rng.choice([".", ".", ",", ":", ";", "", "?", "!"])
 
 
+ITEMS = ("COFFEE MILK TEA RICE CHICKEN BEEF FISH NOODLE BREAD SUGAR SALT WATER JUICE APPLE ORANGE BAG PEN PAPER "
+         "TAPE GLUE SOAP OIL EGG CAKE SOUP SALAD STEAK BURGER FRIES PIZZA PLATE CUP BOX SET PACK MINI LARGE").split()
+LABELS = ["TOTAL", "SUBTOTAL", "CASH", "CHANGE", "ROUNDING", "DISCOUNT", "TAX", "GST", "SERVICE CHARGE", "AMOUNT DUE",
+          "TOTAL SALES (INCLUSIVE OF GST)", "TOTAL QTY", "NET TOTAL", "BALANCE", "PAID"]
+
+
+def _money(rng: random.Random) -> str:
+    return f"{rng.randint(0, 999)}.{rng.randint(0, 99):02d}"
+
+
+def receipt_line(rng: random.Random) -> str:
+    """Receipt-style line: prices with decimals, codes, dates, times, mostly upper case."""
+    r = rng.random()
+    if r < 0.30:
+        name = " ".join(rng.choice(ITEMS) for _ in range(rng.randint(1, 4)))
+        return f"{rng.randint(1, 9)} {name} {rng.choice(['', 'SR ', 'ZR ', 'RM '])}{_money(rng)}".replace("  ", " ")
+    if r < 0.50:
+        sep = rng.choice([" : ", ": ", " ", " RM "])
+        return f"{rng.choice(LABELS)}{sep}{rng.choice(['', '-'])}{_money(rng)}"
+    if r < 0.60:
+        return (f"DATE: {rng.randint(1, 28):02d}/{rng.randint(1, 12):02d}/{rng.randint(2010, 2030)} "
+                f"{rng.randint(0, 23):02d}:{rng.randint(0, 59):02d}:{rng.randint(0, 59):02d}")
+    if r < 0.68:
+        return f"{rng.choice(['TEL', 'TEL:', 'FAX', 'PHONE'])} {rng.randint(0, 9)}{rng.randint(1, 9)}-{rng.randint(1000000, 9999999)}"
+    if r < 0.76:
+        return f"{rng.choice(['GST ID', 'GST REG NO', 'INVOICE NO', 'DOC NO', 'RECEIPT #', 'BILL NO'])}{rng.choice([': ', ' : ', ' '])}{rng.choice(['', 'CS', 'OR', 'INV'])}{rng.randint(10**5, 10**12)}"
+    if r < 0.84:
+        return f"{rng.choice(['SR', 'ZR', 'TX'])} {rng.choice([0, 6, 10])} {_money(rng)} {_money(rng)}"
+    line = make_line(rng, 2, 7)
+    return line.upper() if rng.random() < 0.6 else line
+
+
+def thermal(img: Image.Image, rng: random.Random) -> Image.Image:
+    """Faded thermal-printer look: patchy ink, low contrast, horizontal banding."""
+    arr = np.asarray(img).astype(np.float32)
+    np_rng = np.random.default_rng(rng.randint(0, 2**32 - 1))
+    paper = float(np.median(arr))
+    ink = arr < paper - 40
+    fade = cv2.GaussianBlur(np_rng.random(arr.shape).astype(np.float32), (0, 0), rng.uniform(1.0, 3.0))
+    fade = (fade - fade.min()) / (np.ptp(fade) + 1e-6)
+    strength = rng.uniform(0.2, 0.6)
+    arr = np.where(ink, arr + (paper - arr) * strength * fade, arr)
+    band = 1 + 0.06 * np.sin(np.arange(arr.shape[0]) / rng.uniform(1.5, 4))[:, None]
+    return Image.fromarray(np.clip(arr * band, 0, 255).astype(np.uint8))
+
+
 def find_fonts() -> list[str]:
     out = subprocess.run(["fc-list", "--format", "%{file}\n"], capture_output=True, text=True).stdout
     skip = ("emoji", "ipa", "unifont", "wqy", "opens", "loma", "japanese")

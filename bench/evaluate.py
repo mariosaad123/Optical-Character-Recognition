@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from bench.metrics import bow_f1, cer, wer
+from bench.metrics import score
 from ocr_engine import ENGINES, get_engine
 
 
@@ -27,7 +27,8 @@ def evaluate(data_dir: Path, engine_names: list[str], limit: int | None):
         preds, t0 = [], time.perf_counter()
         for s in samples:
             hyp = engine.recognize(Image.open(data_dir / s["image"]))
-            c, w, b = cer(s["text"], hyp), wer(s["text"], hyp), bow_f1(s["text"], hyp)
+            m = score(s, hyp)
+            c, w, b = m["cer"], m["wer"], m["bow"]
             for key in (s["level"], "all"):
                 per_level[key]["cer"] += c
                 per_level[key]["wer"] += w

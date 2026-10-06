@@ -27,3 +27,9 @@ def test_bow_f1_ignores_order():
     from bench.metrics import bow_f1
     assert bow_f1("a b c", "c b a") == 1.0
     assert abs(bow_f1("a b c d", "a b") - 2 / 3) < 1e-9
+
+
+def test_score_case_insensitive_flag():
+    from bench.metrics import score
+    assert score({"text": "TOTAL 80.91", "case_insensitive": True}, "Total 80.91")["cer"] == 0.0
+    assert score({"text": "TOTAL 80.91"}, "Total 80.91")["cer"] > 0

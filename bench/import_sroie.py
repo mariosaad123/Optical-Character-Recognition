@@ -62,7 +62,8 @@ def main():
                 continue
             shutil.copy(img, out / img.name)
             text = boxes_to_text(box.read_text(encoding="utf-8", errors="ignore"))
-            manifest.append({"image": img.name, "level": "real", "text": text})
+            # SROIE transcripts are upper-cased regardless of the printed case -> compare case-insensitively
+            manifest.append({"image": img.name, "level": "real", "text": text, "case_insensitive": True})
         (out / "manifest.jsonl").write_text("\n".join(json.dumps(m) for m in manifest) + "\n")
         print(f"{split}: {len(manifest)} receipts -> {out}")
 

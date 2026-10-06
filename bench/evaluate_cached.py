@@ -12,7 +12,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from bench.evaluate import to_markdown
-from bench.metrics import bow_f1, cer, wer
+from bench.metrics import score
 from ocr_engine.pipeline import PipelineConfig, fuse
 
 
@@ -41,7 +41,7 @@ def main():
         agg = defaultdict(lambda: defaultdict(float))
         for s in samples:
             hyp = fuse(cache[s["image"]], c, predictor if c.use_lm else None)
-            m = {"cer": cer(s["text"], hyp), "wer": wer(s["text"], hyp), "bow": bow_f1(s["text"], hyp)}
+            m = score(s, hyp)
             for key in (s["level"], "all"):
                 for k, v in m.items():
                     agg[key][k] += v

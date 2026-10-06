@@ -14,7 +14,7 @@ import json
 from multiprocessing import Pool
 from pathlib import Path
 
-from bench.metrics import cer
+from bench.metrics import score
 from ocr_engine.pipeline import PipelineConfig, fuse
 
 _ctx = {}
@@ -28,7 +28,7 @@ def load(dirs: list[Path]):
         for l in (d / "manifest.jsonl").read_text().splitlines():
             if l.strip():
                 s = json.loads(l)
-                items.append((s["text"], cache[s["image"]]))
+                items.append((s, cache[s["image"]]))
     return items
 
 
@@ -39,7 +39,7 @@ def _score(cfg_dict) -> float:
         from ocr_engine.lm import WordPredictor
         predictor = WordPredictor(**cfg.lm_params)
     items = _ctx["items"]
-    return sum(cer(ref, fuse(r, cfg, predictor)) for ref, r in items) / len(items)
+    return sum(score(s, fuse(r, cfg, predictor))["cer"] for s, r in items) / len(items)
 
 
 def _init(items):
