@@ -97,14 +97,16 @@ def load_font(font_path: str, size: int, rng: random.Random | None = None) -> Im
     return font
 
 
-def render(lines: list[str], font_path: str, size: int, rng: random.Random, vary: bool = False) -> Image.Image:
+def render(lines: list[str], font_path: str, size: int, rng: random.Random, vary: bool = False,
+           pad: int | None = None) -> Image.Image:
     font = load_font(font_path, size, rng if vary else None)
     spacing = int(size * rng.uniform(0.25, 0.6))
     ink = rng.randint(0, 60)
     paper = rng.randint(225, 255)
     widths = [font.getbbox(l)[2] for l in lines]
     line_h = font.getbbox("Ag|")[3]
-    pad = rng.randint(size // 2, size * 2)
+    if pad is None:
+        pad = rng.randint(size // 2, size * 2)
     w = max(widths) + 2 * pad
     h = len(lines) * line_h + (len(lines) - 1) * spacing + 2 * pad
     img = Image.new("L", (w, h), paper)

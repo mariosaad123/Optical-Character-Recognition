@@ -46,7 +46,10 @@ def make_one(args) -> str | None:
     level = _level(rng)
     size = rng.randint(18, 40) if level != "hard" else rng.randint(16, 32)
     try:
-        img = degrade_v2(render([text], font, size, rng, vary=True), level, rng, max_angle=0.6)
+        # Tight crop: in raw-line mode (psm 13) Tesseract scales the whole image to the network's
+        # input height, so wide margins would shrink the text and ruin training.
+        pad = rng.randint(max(2, size // 8), max(3, size // 3))
+        img = degrade_v2(render([text], font, size, rng, vary=True, pad=pad), level, rng, max_angle=0.6)
     except Exception:
         return None
     base = out / f"l{i:06d}"

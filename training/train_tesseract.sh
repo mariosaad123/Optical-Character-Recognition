@@ -27,9 +27,12 @@ lstmtraining \
   --target_error_rate 0.005 \
   --debug_interval 0 2>&1 | tee "$WORK/train.log" | grep -E "At iteration|best|Finished" || true
 
-# Pick the best checkpoint (lowest eval error) and export a normal .traineddata
+# Export the best checkpoint (lowest error, encoded in the file name) as a normal .traineddata
+BEST=$(ls "$WORK"/eng_ft_[0-9]*.checkpoint 2>/dev/null | awk -F'eng_ft_' '{print $2" "$0}' | sort -g | head -1 | cut -d' ' -f2)
+BEST=${BEST:-$WORK/eng_ft_checkpoint}
+echo "exporting $BEST"
 lstmtraining --stop_training \
-  --continue_from "$WORK/eng_ft_checkpoint" \
+  --continue_from "$BEST" \
   --traineddata "$BASE" \
   --model_output data/tessdata/eng_ft.traineddata
 echo "wrote data/tessdata/eng_ft.traineddata"
