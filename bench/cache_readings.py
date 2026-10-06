@@ -28,6 +28,12 @@ def _run(args):
     return s["image"], {src: read_source(src, img, _engines, variants) for src in sources}
 
 
+def _save(path: Path, cache: dict) -> None:
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(cache))
+    tmp.replace(path)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--data", type=Path, required=True)
@@ -40,11 +46,12 @@ def main():
     todo = [(a.data, s, [src for src in a.sources if src not in cache.get(s["image"], {})]) for s in samples]
     todo = [t for t in todo if t[2]]
     with Pool(a.workers) as pool:
-        for i, (name, res) in enumerate(pool.imap_unordered(_run, todo, chunksize=2)):
+        for i, (name, res) in enumerate(pool.imap_unordered(_run, todo, chunksize=2), 1):
             cache.setdefault(name, {}).update(res)
-            if i % 50 == 0:
+            if i % 25 == 0:  # save progress so an interrupted run can resume
+                _save(cache_path, cache)
                 print(f"{i}/{len(todo)}", flush=True)
-    cache_path.write_text(json.dumps(cache))
+    _save(cache_path, cache)
     print(f"cached {len(a.sources)} sources for {len(samples)} images -> {cache_path}")
 
 
