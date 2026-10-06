@@ -28,18 +28,24 @@ class Hypothesis:
 @dataclass
 class Slot:
     votes: dict[str, float] = field(default_factory=lambda: defaultdict(float))
+    confs: dict[str, list[float]] = field(default_factory=lambda: defaultdict(list))  # engine confidences per reading
     voters: float = 0.0  # total weight of hypotheses that voted in this slot
     line_break_after: bool = False
 
     def add(self, word: str, conf: float, weight: float) -> None:
         # A reading counts more when its engine is reliable (weight) and confident (conf).
         self.votes[word] += weight * (0.3 + 0.7 * conf)
+        self.confs[word].append(conf)
         self.voters += weight
 
     def best(self) -> tuple[str, float]:
         word, score = max(self.votes.items(), key=lambda kv: kv[1])
         total = sum(self.votes.values())
         return word, (score / total if total else 0.0)
+
+    def engine_conf(self, word: str) -> float:
+        cs = self.confs.get(word)
+        return sum(cs) / len(cs) if cs else 0.0
 
     def candidates(self) -> list[tuple[str, float]]:
         total = sum(self.votes.values()) or 1.0

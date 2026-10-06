@@ -25,6 +25,7 @@ from rapidfuzz.distance import Levenshtein
 
 CACHE = Path(__file__).resolve().parent.parent / "data" / "lm_cache.pkl"
 DIRICHLET = 50.0  # bigram smoothing strength
+EXTRA_GLYPH_COST = 1.4
 
 # (seen, truth) pairs that OCR confuses; cost in [0, 1] instead of 1.
 CONFUSIONS = {
@@ -56,7 +57,8 @@ def ocr_edit_cost(seen: str, truth: str) -> float:
         for j in range(1, m + 1):
             a, b = seen[i - 1], truth[j - 1]
             sub = 0.0 if a == b else (0.6 if a.lower() == b.lower() else CONFUSIONS.get((a, b), 1.0))
-            best = min(dp[i - 1][j] + 1.0, dp[i][j - 1] + 1.0, dp[i - 1][j - 1] + sub)
+            # an extra glyph in the reading (dp[i-1][j]) is rarer in OCR than a missing or misread one
+            best = min(dp[i - 1][j] + EXTRA_GLYPH_COST, dp[i][j - 1] + 1.0, dp[i - 1][j - 1] + sub)
             for la in range(1, _CONF_MAX + 1):
                 for lb in range(1, _CONF_MAX + 1):
                     if (la > 1 or lb > 1) and la <= i and lb <= j:
@@ -173,6 +175,8 @@ def _protected(core: str) -> bool:
         return True
     if core.isupper() and len(core) <= 5:
         return True
+    if "-" in core:  # hyphenated compounds (to-morrow, shell-fish) are rarely in a lexicon
+        return True
     return False
 
 
@@ -189,9 +193,11 @@ def _cached_neighbors(w: str) -> frozenset:
 class WordPredictor:
     """Rescores every word of an OCR result. Parameters are tuned on the dev split."""
 
-    def __init__(self, lam: float = 4.0, mu: float = 3.0, margin: float = 1.0, max_cost: float = 2.0):
+    def __init__(self, lam: float = 4.0, mu: float = 3.0, margin: float = 1.0, max_cost: float = 2.0,
+                 keep_unknown: float = 0.8):
         self.lm = get_lm()
         self.lam, self.mu, self.margin, self.max_cost = lam, mu, margin, max_cost
+        self.keep_unknown = keep_unknown  # unknown words read this confidently are names / rare words: keep
         self._neighbors = _cached_neighbors
 
     def correct_line(self, words: list[str], alts: list[list[tuple[str, float]]] | None = None,
@@ -212,6 +218,8 @@ class WordPredictor:
                 if ac and LETTERS_RE.match(ac):
                     alt[ac.lower()] = max(alt.get(ac.lower(), 0.0), share)
             if self.lm.known(core) and conf >= 0.9 and len(alt) <= 1:
+                continue
+            if not self.lm.known(core) and conf >= self.keep_unknown and len(alt) <= 1:
                 continue
             prev = _core(out[i - 1]) if i else None
             nxt = _core(words[i + 1]) if i + 1 < len(words) else None

@@ -4,4 +4,5 @@ __pycache__/
 .venv/
 # Benchmarks are regenerated deterministically from bench/generate.py
 data/
+results/**/predictions.json
 results/predictions.json

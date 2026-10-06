@@ -22,14 +22,17 @@ MIN_CONFS = (0.0, 0.1, 0.2, 0.3, 0.4)
 
 
 def load(dirs: list[Path]):
-    items = []
+    """Per dataset: list of (sample, readings). Datasets are weighted equally when scoring."""
+    groups = []
     for d in dirs:
         cache = json.loads((d / "readings.json").read_text())
+        items = []
         for l in (d / "manifest.jsonl").read_text().splitlines():
             if l.strip():
                 s = json.loads(l)
                 items.append((s, cache[s["image"]]))
-    return items
+        groups.append(items)
+    return groups
 
 
 def _score(cfg_dict) -> float:
@@ -38,8 +41,9 @@ def _score(cfg_dict) -> float:
     if cfg.use_lm:
         from ocr_engine.lm import WordPredictor
         predictor = WordPredictor(**cfg.lm_params)
-    items = _ctx["items"]
-    return sum(score(s, fuse(r, cfg, predictor))["cer"] for s, r in items) / len(items)
+    groups = _ctx["items"]
+    # macro average: synthetic and real data count equally regardless of their sizes
+    return sum(sum(score(s, fuse(r, cfg, predictor))["cer"] for s, r in g) / len(g) for g in groups) / len(groups)
 
 
 def _init(items):
@@ -54,7 +58,7 @@ def main():
     p.add_argument("--workers", type=int, default=4)
     a = p.parse_args()
     items = load(a.data)
-    sources = sorted({s for _, r in items for s in r})
+    sources = sorted(set.intersection(*[{s for _, r in g for s in r} for g in items]))
 
     with Pool(a.workers, initializer=_init, initargs=(items,)) as pool:
         single = dict(zip(sources, pool.map(_score, [{"sources": {s: 1.0}, "use_lm": False} for s in sources])))
@@ -67,7 +71,7 @@ def main():
         for s, c in sorted(single.items(), key=lambda kv: kv[1]):
             print(f"  {s:32s} {c:.4f}")
 
-        ranked = sorted(sources, key=single.get)[:6]
+        ranked = sorted(sources, key=single.get)[:7]
         configs = []
         for k in range(2, a.max_sources + 1):
             for subset in itertools.combinations(ranked, k):
@@ -82,8 +86,8 @@ def main():
         base = best_vote[1] if best_vote[0] < best_single else {"sources": {top: 1.0}, "min_conf": min_conf}
 
         grid = [
-            {**base, "use_lm": True, "lm_params": {"lam": lam, "mu": mu, "margin": mg}}
-            for lam in (2.0, 3.0, 4.0, 6.0) for mu in (1.0, 3.0) for mg in (1.0, 3.0, 5.0)
+            {**base, "use_lm": True, "lm_params": {"lam": lam, "mu": 3.0, "margin": mg, "keep_unknown": ku}}
+            for lam in (3.0, 6.0, 10.0) for mg in (1.0, 3.0) for ku in (0.5, 0.7, 0.85)
         ]
         lm_scores = pool.map(_score, grid)
     no_lm = min(best_vote[0], best_single)

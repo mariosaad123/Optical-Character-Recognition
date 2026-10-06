@@ -5,14 +5,16 @@ from PIL import Image
 
 from .base import OCREngine
 
-TESSDATA = Path(__file__).resolve().parents[2] / "data" / "tessdata"
+ROOT = Path(__file__).resolve().parents[2]
+# our trained models are committed in models/; downloaded ones (eng_best) live in data/tessdata/
+SEARCH_DIRS = [ROOT / "models", ROOT / "data" / "tessdata"]
 
 
 class TesseractEngine(OCREngine):
     """Classic LSTM-based engine (Tesseract 5). Free, CPU-only.
 
-    model: "eng" (system, fast int model), or the name of a .traineddata file in data/tessdata
-    (e.g. "eng_best", the float model, or "eng_ft", our fine-tuned model).
+    model: "eng" (system, fast int model), or the name of a .traineddata file in models/ or
+    data/tessdata/ (e.g. "eng_best", the float model, or "eng_ft2", our fine-tuned model).
     """
 
     name = "tesseract"
@@ -21,9 +23,10 @@ class TesseractEngine(OCREngine):
         # psm 6 = assume a single uniform block of text
         self.config = f"--oem 1 --psm {psm}"
         if model != "eng":
-            if not (TESSDATA / f"{model}.traineddata").exists():
-                raise FileNotFoundError(f"{TESSDATA}/{model}.traineddata (run scripts/fetch_resources.py)")
-            self.config += f' --tessdata-dir "{TESSDATA}"'
+            found = [d for d in SEARCH_DIRS if (d / f"{model}.traineddata").exists()]
+            if not found:
+                raise FileNotFoundError(f"{model}.traineddata not in {SEARCH_DIRS} (run scripts/fetch_resources.py)")
+            self.config += f' --tessdata-dir "{found[0]}"'
         self.lang = model
         self.name = "tesseract" if model == "eng" else f"tesseract-{model}"
 

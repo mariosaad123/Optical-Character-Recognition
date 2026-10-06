@@ -84,7 +84,8 @@ def fuse(readings: dict[str, Lines], cfg: PipelineConfig, predictor=None) -> str
     for s in slots:
         word, share = s.best()
         if word:
-            cur.append((word, share, s.candidates()))
+            # certainty = agreement between readers x the engines' own confidence
+            cur.append((word, share * s.engine_conf(word), s.candidates()))
         if s.line_break_after and cur:
             lines.append(cur)
             cur = []
