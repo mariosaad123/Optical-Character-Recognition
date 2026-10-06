@@ -1,7 +1,7 @@
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from ocr_engine.preprocess import enhance, estimate_skew, estimate_text_height, rotate, to_gray
+from ocr_engine.preprocess import enhance, estimate_skew, noise_level, rotate, to_gray
 
 
 def _page(size=28):
@@ -20,13 +20,12 @@ def test_skew_is_detected_and_undone():
     assert abs(angle + 3.0) <= 0.4
 
 
-def test_text_height_estimate_is_plausible():
-    h = estimate_text_height(to_gray(_page(28)))
-    assert 12 <= h <= 32
+def test_noise_is_measured():
+    gray = to_gray(_page())
+    noisy = np.clip(gray + np.random.default_rng(0).normal(0, 20, gray.shape), 0, 255).astype(np.uint8)
+    assert noise_level(noisy) > 3 * noise_level(gray)
 
 
-def test_enhance_upscales_small_text():
-    small = _page(28).resize((300, 100))
-    out = enhance(small)
-    assert out.width > small.width
-    assert np.asarray(out).dtype == np.uint8
+def test_enhance_keeps_clean_page_readable():
+    out = enhance(_page())
+    assert out.size[0] >= 900 and np.asarray(out).dtype == np.uint8

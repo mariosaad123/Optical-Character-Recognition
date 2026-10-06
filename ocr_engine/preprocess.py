@@ -1,60 +1,56 @@
 """Image enhancement before recognition.
 
-Each step targets one failure mode seen on the benchmark:
-- upscale:   low-DPI text (Tesseract works best with ~30px capital height)
-- deskew:    rotated scans / photos
-- normalize: shadows and uneven lighting (divide by estimated background)
-- denoise:   sensor noise, salt & pepper, JPEG artifacts
+Measured on the dev split (Tesseract eng_best, accuracy = 1 - CER):
+
+    step                      medium    hard
+    none                      96.98%    42.84%
+    denoise (3x sigma)        96.98%    59.62%
+    upscale                   95.55%  -218.16%   <- magnifies noise into fake glyphs; not used
+    denoise + normalize       99.24%    65.28%
+    denoise 6x + normalize    99.16%    72.25%
+    denoise + deskew + norm.  99.36%    66.08%
+
+So: adaptive denoising (strength proportional to the measured noise), projection-profile
+deskew, and background normalization (shadows / uneven light). Two strengths are exposed
+as separate variants so the voting step gets diverse readings.
 """
 
 import cv2
 import numpy as np
 from PIL import Image
 
-TARGET_TEXT_HEIGHT = 32  # px, height of a typical lowercase+ascender glyph after scaling
-
-
 def to_gray(image: Image.Image) -> np.ndarray:
     return np.asarray(image.convert("L"))
 
 
-def estimate_text_height(gray: np.ndarray) -> float:
-    """Median height of glyph-sized connected components."""
-    _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    n, _, stats, _ = cv2.connectedComponentsWithStats(bw, connectivity=8)
-    if n <= 1:
-        return 0.0
-    h, w, area = stats[1:, cv2.CC_STAT_HEIGHT], stats[1:, cv2.CC_STAT_WIDTH], stats[1:, cv2.CC_STAT_AREA]
-    keep = (h >= 4) & (area >= 8) & (h < gray.shape[0] * 0.5) & (w < gray.shape[1] * 0.3)
-    return float(np.median(h[keep])) if keep.any() else 0.0
+def _ink_mask(gray: np.ndarray) -> np.ndarray:
+    """Binary ink mask that ignores isolated noise specks (median blur + opening)."""
+    smooth = cv2.medianBlur(gray, 3)
+    _, bw = cv2.threshold(smooth, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    return cv2.morphologyEx(bw, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
 
 
-def upscale(gray: np.ndarray, max_factor: float = 4.0) -> tuple[np.ndarray, float]:
-    th = estimate_text_height(gray)
-    if th <= 0:
-        return gray, 1.0
-    factor = float(np.clip(TARGET_TEXT_HEIGHT / th, 1.0, max_factor))
-    if factor < 1.15:
-        return gray, 1.0
-    return cv2.resize(gray, None, fx=factor, fy=factor, interpolation=cv2.INTER_CUBIC), factor
-
-
-def estimate_skew(gray: np.ndarray, max_angle: float = 6.0, step: float = 0.2) -> float:
-    """Projection-profile method: the right angle makes text rows sharpest (max row-sum variance)."""
+def estimate_skew(gray: np.ndarray, max_angle: float = 5.0, step: float = 0.2, min_gain: float = 1.15) -> float:
+    """Projection-profile method: the right angle makes text rows sharpest (max row-sum variance).
+    Returns 0 unless the best angle is clearly better than no rotation (protects noisy images)."""
     small = gray
     scale = 800 / max(gray.shape)
     if scale < 1:
         small = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-    _, bw = cv2.threshold(small, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    bw = _ink_mask(small)
+    # pad so rotating a wide, short image does not push text out of the frame
+    py = int(bw.shape[1] * np.sin(np.radians(max_angle)) / 2) + 2
+    bw = cv2.copyMakeBorder(bw, py, py, 2, 2, cv2.BORDER_CONSTANT, value=0)
     h, w = bw.shape
     center = (w / 2, h / 2)
-    best, best_score = 0.0, -1.0
+    scores = {}
     for angle in np.arange(-max_angle, max_angle + 1e-9, step):
-        m = cv2.getRotationMatrix2D(center, angle, 1.0)
+        m = cv2.getRotationMatrix2D(center, float(angle), 1.0)
         rot = cv2.warpAffine(bw, m, (w, h), flags=cv2.INTER_NEAREST, borderValue=0)
-        score = float(np.var(rot.sum(axis=1)))
-        if score > best_score:
-            best, best_score = float(angle), score
+        scores[round(float(angle), 2)] = float(np.var(rot.sum(axis=1)))
+    best = max(scores, key=scores.get)
+    if scores[best] < min_gain * scores.get(0.0, 0.0):
+        return 0.0
     return best
 
 
@@ -67,7 +63,8 @@ def rotate(gray: np.ndarray, angle: float) -> np.ndarray:
     nw, nh = int(h * sin + w * cos), int(h * cos + w * sin)
     m[0, 2] += nw / 2 - w / 2
     m[1, 2] += nh / 2 - h / 2
-    return cv2.warpAffine(gray, m, (nw, nh), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    bg = int(np.median(gray))  # fill with paper colour; replicating edge pixels creates fake strokes
+    return cv2.warpAffine(gray, m, (nw, nh), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=bg)
 
 
 def normalize_background(gray: np.ndarray) -> np.ndarray:
@@ -92,16 +89,14 @@ def noise_level(gray: np.ndarray) -> float:
     return float(np.sqrt(np.pi / 2) * np.mean(np.abs(lap)) / 6)
 
 
-def enhance(image: Image.Image) -> Image.Image:
-    """Adaptive enhancement: each step runs only when the image needs it."""
+def enhance(image: Image.Image, strength: float = 6.0) -> Image.Image:
+    """Adaptive enhancement: denoise only when noisy, deskew only when clearly skewed."""
     gray = to_gray(image)
     sigma = noise_level(gray)
-    if sigma > 4:
-        gray = denoise(gray, strength=min(25.0, 1.2 * sigma))
-    gray, _ = upscale(gray)
+    if sigma > 2.0:
+        gray = denoise(gray, strength=min(30.0, strength * sigma))
     gray = rotate(gray, estimate_skew(gray))
-    gray = normalize_background(gray)
-    return Image.fromarray(gray)
+    return Image.fromarray(normalize_background(gray))
 
 
 def binarize(image: Image.Image) -> Image.Image:
@@ -113,5 +108,6 @@ def binarize(image: Image.Image) -> Image.Image:
 VARIANTS = {
     "raw": lambda im: im.convert("L"),
     "enhanced": enhance,
+    "soft": lambda im: enhance(im, strength=3.0),
     "binary": lambda im: binarize(enhance(im)),
 }

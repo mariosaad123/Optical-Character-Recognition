@@ -31,6 +31,7 @@ class PipelineConfig:
     })
     use_lm: bool = True
     lm_params: dict = field(default_factory=dict)
+    min_conf: float = 0.0  # drop words below this confidence (noise read as glyphs)
 
     @classmethod
     def load(cls, path: Path = CONFIG_PATH) -> "PipelineConfig":
@@ -59,13 +60,21 @@ def read_source(source: str, image: Image.Image, engines: dict, variants: dict) 
 
 def fuse(readings: dict[str, Lines], cfg: PipelineConfig, predictor=None) -> str:
     """Combine per-source readings into final text (pure function, shared by live use and benchmarks)."""
-    hyps = [Hypothesis(readings[s], w, s) for s, w in cfg.sources.items() if s in readings and readings[s]]
+    def clean(lines: Lines) -> Lines:
+        return [[(w, c) for w, c in line if c >= cfg.min_conf] for line in lines]
+
+    hyps = [Hypothesis(clean(readings[s]), w, s) for s, w in cfg.sources.items() if s in readings and readings[s]]
     if not hyps:
         return ""
-    # pivot = the most trustworthy reading (weight x mean confidence), it decides the layout
+    hyps = [h for h in hyps if h.words]
+    if not hyps:
+        return ""
+    # pivot = the most trustworthy reading (weight x mean confidence x coverage); it decides the layout
+    longest = max(len(h.words) for h in hyps)
+
     def trust(h: Hypothesis) -> float:
         ws = h.words
-        return h.weight * (sum(c for _, c in ws) / len(ws)) * min(1.0, len(ws) / max(len(x.words) for x in hyps))
+        return h.weight * (sum(c for _, c in ws) / len(ws)) * min(1.0, len(ws) / longest)
     hyps.sort(key=trust, reverse=True)
     slots = combine(hyps)
     if predictor is None or not cfg.use_lm:

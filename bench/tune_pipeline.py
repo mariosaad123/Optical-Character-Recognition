@@ -18,6 +18,7 @@ from bench.metrics import cer
 from ocr_engine.pipeline import PipelineConfig, fuse
 
 _ctx = {}
+MIN_CONFS = (0.0, 0.1, 0.2, 0.3, 0.4)
 
 
 def load(dirs: list[Path]):
@@ -57,6 +58,11 @@ def main():
 
     with Pool(a.workers, initializer=_init, initargs=(items,)) as pool:
         single = dict(zip(sources, pool.map(_score, [{"sources": {s: 1.0}, "use_lm": False} for s in sources])))
+        # confidence filter, chosen on the best single source
+        top = min(single, key=single.get)
+        mc_scores = dict(zip(MIN_CONFS, pool.map(_score, [{"sources": {top: 1.0}, "use_lm": False, "min_conf": m} for m in MIN_CONFS])))
+        min_conf = min(mc_scores, key=mc_scores.get)
+        print(f"min_conf on {top}: {mc_scores} -> {min_conf}")
         print("single sources (dev CER):")
         for s, c in sorted(single.items(), key=lambda kv: kv[1]):
             print(f"  {s:32s} {c:.4f}")
@@ -67,12 +73,13 @@ def main():
             for subset in itertools.combinations(ranked, k):
                 for scale in (0.0, 1.0, 2.0):  # weight = (1 - CER)^scale*... sharper with higher scale
                     w = {s: round((1 - single[s]) ** (1 + 4 * scale), 3) for s in subset}
-                    configs.append({"sources": w, "use_lm": False})
+                    for mc in {0.0, min_conf}:
+                        configs.append({"sources": w, "use_lm": False, "min_conf": mc})
         scores = pool.map(_score, configs)
         best_vote = min(zip(scores, configs), key=lambda x: x[0])
         best_single = min(single.values())
         print(f"best voting config: {best_vote[1]['sources']} CER {best_vote[0]:.4f} (best single {best_single:.4f})")
-        base = best_vote[1] if best_vote[0] < best_single else {"sources": {min(single, key=single.get): 1.0}}
+        base = best_vote[1] if best_vote[0] < best_single else {"sources": {top: 1.0}, "min_conf": min_conf}
 
         grid = [
             {**base, "use_lm": True, "lm_params": {"lam": lam, "mu": mu, "margin": mg}}
