@@ -29,3 +29,14 @@ python -m pytest tests
 ```
 
 Results are written to `results/RESULTS.md` and `results/summary.json`.
+
+## Current results (test split, 300 images, CPU only)
+
+| Engine | clean | medium | hard | overall accuracy (1-CER) | overall WER | sec/img |
+|---|---|---|---|---|---|---|
+| tesseract | 99.87% | 97.71% | 42.81% | 80.13% | 42.61% | 0.32 |
+| rapidocr | 97.61% | 94.25% | 57.64% | 83.17% | 45.72% | 1.97 |
+| **router (ours)** | **99.87%** | **98.11%** | **63.18%** | **87.05%** | **24.26%** | 0.62 |
+
+The router threshold (0.56) was tuned on the dev split only. The `hard` level (heavy blur, noise, skew,
+low resolution, JPEG artifacts) is where the remaining work is.
