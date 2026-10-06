@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+# Benchmarks are regenerated deterministically from bench/generate.py
+data/
+results/predictions.json

@@ -1,0 +1,6 @@
+pillow
+numpy
+rapidfuzz
+pytesseract
+rapidocr_onnxruntime
+pytest
