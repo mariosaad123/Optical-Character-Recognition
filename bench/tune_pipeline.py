@@ -50,13 +50,37 @@ def _init(items):
     _ctx["items"] = items
 
 
+def tune_lm_only(a) -> None:
+    items = load(a.data)
+    saved = json.loads(a.out.read_text())
+    base = {k: saved[k] for k in ("sources", "min_conf", "char_vote") if k in saved}
+    grid = [
+        {**base, "use_lm": True, "english_gate": gate,
+         "lm_params": {"lam": lam, "mu": 3.0, "margin": mg, "keep_unknown": ku}}
+        for lam in (3.0, 6.0, 10.0) for mg in (1.0, 3.0) for ku in (0.5, 0.85) for gate in (0.0, 0.7, 0.8, 0.9)
+    ]
+    with Pool(a.workers, initializer=_init, initargs=(items,)) as pool:
+        no_lm = pool.apply(_score, ({**base, "use_lm": False},))
+        lm_scores = pool.map(_score, grid)
+    best_lm = min(zip(lm_scores, grid), key=lambda x: x[0])
+    print(f"without word prediction: {no_lm:.4f}")
+    for sc, cfg in sorted(zip(lm_scores, grid), key=lambda x: x[0])[:5]:
+        print(f"  {sc:.4f} gate={cfg['english_gate']} {cfg['lm_params']}")
+    final = best_lm[1] if best_lm[0] < no_lm else {**base, "use_lm": False}
+    a.out.write_text(json.dumps(final, indent=2))
+    print(f"saved {a.out}: use_lm={final['use_lm']}")
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--data", nargs="+", type=Path, required=True)
     p.add_argument("--out", type=Path, default=Path("ocr_engine/pipeline_config.json"))
     p.add_argument("--max-sources", type=int, default=4)
     p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--lm-only", action="store_true", help="keep the saved voting config, re-tune word prediction")
     a = p.parse_args()
+    if a.lm_only:
+        return tune_lm_only(a)
     items = load(a.data)
     sources = sorted(set.intersection(*[{s for _, r in g for s in r} for g in items]))
 
@@ -89,8 +113,9 @@ def main():
             print(f"  {sc:.4f} char_vote={cfg['char_vote']} {cfg['sources']}")
 
         grid = [
-            {**base, "use_lm": True, "lm_params": {"lam": lam, "mu": 3.0, "margin": mg, "keep_unknown": ku}}
-            for lam in (3.0, 6.0, 10.0) for mg in (1.0, 3.0) for ku in (0.5, 0.7, 0.85)
+            {**base, "use_lm": True, "english_gate": gate,
+             "lm_params": {"lam": lam, "mu": 3.0, "margin": mg, "keep_unknown": ku}}
+            for lam in (3.0, 6.0, 10.0) for mg in (1.0, 3.0) for ku in (0.5, 0.85) for gate in (0.0, 0.7, 0.8, 0.9)
         ]
         lm_scores = pool.map(_score, grid)
     no_lm = min(best_vote[0], best_single)

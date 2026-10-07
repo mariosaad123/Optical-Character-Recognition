@@ -16,11 +16,17 @@ from bench.metrics import score
 from ocr_engine.pipeline import PipelineConfig, fuse
 
 
+def _bigram(cfg: PipelineConfig):
+    from ocr_engine.lm import WordPredictor
+    return WordPredictor(**cfg.lm_params)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--data", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--sources", nargs="*", help="single sources to report (default: all cached)")
+    p.add_argument("--baseline", type=Path, help="an older pipeline_config.json to report alongside")
     a = p.parse_args()
 
     cache = json.loads((a.data / "readings.json").read_text())
@@ -33,6 +39,8 @@ def main():
     no_lm = PipelineConfig(sources=cfg.sources, use_lm=False)
 
     systems = {s: PipelineConfig(sources={s: 1.0}, use_lm=False) for s in (a.sources or sorted(next(iter(cache.values()))))}
+    if a.baseline:
+        systems["previous pipeline"] = PipelineConfig(**json.loads(a.baseline.read_text()))
     systems["pipeline (voting only)"] = no_lm
     systems["PIPELINE (voting + word prediction)"] = cfg
 
@@ -40,7 +48,7 @@ def main():
     for name, c in systems.items():
         agg = defaultdict(lambda: defaultdict(float))
         for s in samples:
-            hyp = fuse(cache[s["image"]], c, predictor if c.use_lm else None)
+            hyp = fuse(cache[s["image"]], c, (predictor if c is cfg else _bigram(c)) if c.use_lm else None)
             m = score(s, hyp)
             for key in (s["level"], "all"):
                 for k, v in m.items():

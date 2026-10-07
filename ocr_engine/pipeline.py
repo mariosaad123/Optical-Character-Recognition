@@ -33,6 +33,9 @@ class PipelineConfig:
     lm_params: dict = field(default_factory=dict)
     min_conf: float = 0.0  # drop words below this confidence (noise read as glyphs)
     char_vote: bool = False  # character-level voting inside disputed word slots
+    # word prediction only runs when at least this share of the confidently read words are English
+    # (receipts in other languages, codes or menus must not be "corrected" into English)
+    english_gate: float = 0.0
 
     @classmethod
     def load(cls, path: Path = CONFIG_PATH) -> "PipelineConfig":
@@ -95,12 +98,25 @@ def fuse(readings: dict[str, Lines], cfg: PipelineConfig, predictor=None) -> str
             cur = []
     if cur:
         lines.append(cur)
+    if cfg.english_gate and english_share(lines, predictor) < cfg.english_gate:
+        return "\n".join(" ".join(w for w, _, _ in line) for line in lines)
     out = []
     for line in lines:
         words = [w for w, _, _ in line]
         fixed = predictor.correct_line(words, alts=[c for _, _, c in line], confs=[s for _, s, _ in line])
         out.append(" ".join(fixed))
     return "\n".join(out)
+
+
+def english_share(lines, predictor) -> float:
+    """Share of confidently read alphabetic words that are in the English lexicon."""
+    from .lm import LETTERS_RE, _core
+
+    words = [_core(w) for line in lines for w, conf, _ in line if conf >= 0.8]
+    words = [w for w in words if len(w) >= 3 and LETTERS_RE.match(w)]
+    if not words:
+        return 1.0
+    return sum(predictor.lm.known(w) for w in words) / len(words)
 
 
 class PipelineEngine:

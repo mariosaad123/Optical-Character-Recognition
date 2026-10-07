@@ -1,0 +1,16 @@
+{
+  "sources": {
+    "tesseract-eng_ft2last/enhanced": 0.887,
+    "tesseract-eng_best/enhanced": 0.877,
+    "tesseract-eng_ft2/soft": 0.872,
+    "rapidocr/raw": 0.846
+  },
+  "use_lm": true,
+  "min_conf": 0.0,
+  "lm_params": {
+    "lam": 10.0,
+    "mu": 3.0,
+    "margin": 3.0,
+    "keep_unknown": 0.85
+  }
+}

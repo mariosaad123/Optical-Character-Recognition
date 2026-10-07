@@ -1,16 +1,17 @@
 {
   "sources": {
-    "tesseract-eng_ft2last/enhanced": 0.887,
-    "tesseract-eng_best/enhanced": 0.877,
-    "tesseract-eng_ft2/soft": 0.872,
-    "rapidocr/raw": 0.846
+    "ppocr6m/enhanced": 0.905,
+    "ppocr6s/raw": 0.889,
+    "rapidocr/raw": 0.863,
+    "tesseract-eng_ft2/enhanced": 0.805
   },
   "use_lm": true,
   "min_conf": 0.0,
+  "char_vote": true,
   "lm_params": {
     "lam": 10.0,
     "mu": 3.0,
-    "margin": 3.0,
-    "keep_unknown": 0.85
+    "margin": 1.0,
+    "keep_unknown": 0.5
   }
 }
