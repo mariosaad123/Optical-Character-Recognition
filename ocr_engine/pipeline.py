@@ -46,6 +46,9 @@ def _engine(name: str):
     if name == "rapidocr":
         from .engines.rapidocr_engine import RapidOCREngine
         return RapidOCREngine()
+    if name.startswith("ppocr"):
+        from .engines.ppocr_engine import PPOCREngine
+        return PPOCREngine(name)
     raise ValueError(name)
 
 

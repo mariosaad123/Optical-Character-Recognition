@@ -15,6 +15,9 @@ def get_engine(name: str) -> OCREngine:
     if name == "rapidocr":
         from .rapidocr_engine import RapidOCREngine
         return RapidOCREngine()
+    if name.startswith("ppocr"):  # ppocr6s, ppocr6m, ppocr5en
+        from .ppocr_engine import PPOCREngine
+        return PPOCREngine(name)
     if name == "router":
         from .router_engine import RouterEngine
         return RouterEngine()

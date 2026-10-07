@@ -200,41 +200,56 @@ class WordPredictor:
         self.keep_unknown = keep_unknown  # unknown words read this confidently are names / rare words: keep
         self._neighbors = _cached_neighbors
 
+    def suspect(self, token: str, conf: float, alts_i: list[tuple[str, float]] | None):
+        """Return (pre, core, post, alt) if the word deserves a second look, else None."""
+        m = WORD_RE.match(token)
+        pre, core, post = (m.group(1), m.group(2), m.group(3)) if m else ("", token, "")
+        if _protected(core):
+            return None
+        if core.isupper() and conf >= 0.5:
+            return None  # headings, names, codes, non-English words on receipts: leave unless very unsure
+        alt = {}
+        for a, share in (alts_i or []):
+            ac = _core(a)
+            if ac and LETTERS_RE.match(ac):
+                alt[ac.lower()] = max(alt.get(ac.lower(), 0.0), share)
+        if self.lm.known(core) and conf >= 0.9 and len(alt) <= 1:
+            return None
+        if not self.lm.known(core) and conf >= self.keep_unknown and len(alt) <= 1:
+            return None
+        return pre, core, post, alt
+
+    def candidates(self, core: str, alt: dict) -> set[str]:
+        cands = set(alt) | self._neighbors(core.lower())
+        cands.add(core.lower())
+        return cands
+
+    def channel(self, core: str, c: str, alt: dict) -> float:
+        """Visual plausibility + engine votes (higher is better), shared with the neural predictor."""
+        cost = 0.0 if c == core.lower() else ocr_edit_cost(core.lower(), c)
+        s = -self.lam * cost + self.mu * alt.get(c, 0.0)
+        if not self.lm.known(c):
+            s -= 6.0
+        return s
+
     def correct_line(self, words: list[str], alts: list[list[tuple[str, float]]] | None = None,
-                     confs: list[float] | None = None) -> list[str]:
+                     confs: list[float] | None = None, context: str = "") -> list[str]:
         """words: OCR words; alts[i]: (reading, vote share) alternatives from the ensemble."""
         out = list(words)
         for i, token in enumerate(words):
-            m = WORD_RE.match(token)
-            pre, core, post = (m.group(1), m.group(2), m.group(3)) if m else ("", token, "")
-            if _protected(core):
-                continue
             conf = confs[i] if confs else 1.0
-            if core.isupper() and conf >= 0.5:
-                continue  # headings, names, codes, non-English words on receipts: leave unless very unsure
-            alt = {}
-            for a, share in (alts[i] if alts else []):
-                ac = _core(a)
-                if ac and LETTERS_RE.match(ac):
-                    alt[ac.lower()] = max(alt.get(ac.lower(), 0.0), share)
-            if self.lm.known(core) and conf >= 0.9 and len(alt) <= 1:
+            sus = self.suspect(token, conf, alts[i] if alts else None)
+            if sus is None:
                 continue
-            if not self.lm.known(core) and conf >= self.keep_unknown and len(alt) <= 1:
-                continue
+            pre, core, post, alt = sus
             prev = _core(out[i - 1]) if i else None
             nxt = _core(words[i + 1]) if i + 1 < len(words) else None
-            cands = set(alt) | self._neighbors(core.lower())
-            cands.add(core.lower())
             obs_known = self.lm.known(core)
 
             def score(c: str) -> float:
-                cost = 0.0 if c == core.lower() else ocr_edit_cost(core.lower(), c)
-                s = self.lm.logp(c, prev, nxt) - self.lam * cost + self.mu * alt.get(c, 0.0)
-                if not self.lm.known(c):
-                    s -= 6.0
-                return s
+                return self.lm.logp(c, prev, nxt) + self.channel(core, c, alt)
 
-            best = max(cands, key=score)
+            best = max(self.candidates(core, alt), key=score)
             if best == core.lower():
                 continue
             cost = ocr_edit_cost(core.lower(), best)
