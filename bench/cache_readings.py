@@ -18,6 +18,7 @@ os.environ.setdefault("OCR_ORT_THREADS", "1")  # same for ONNX Runtime engines
 from PIL import Image  # noqa: E402
 
 from ocr_engine.pipeline import read_source  # noqa: E402
+from ocr_engine.preprocess import auto_fix  # noqa: E402
 
 _engines: dict = {}
 
@@ -25,6 +26,8 @@ _engines: dict = {}
 def _run(args):
     data, s, sources = args
     img = Image.open(data / s["image"])
+    if os.environ.get("OCR_AUTOFIX", "1") == "1":
+        img, _ = auto_fix(img)  # same as PipelineEngine.recognize
     variants: dict = {}
     return s["image"], {src: read_source(src, img, _engines, variants) for src in sources}
 

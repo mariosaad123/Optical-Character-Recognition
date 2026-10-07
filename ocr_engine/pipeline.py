@@ -16,7 +16,7 @@ from pathlib import Path
 from PIL import Image
 
 from .ensemble import Hypothesis, combine, to_lines
-from .preprocess import VARIANTS
+from .preprocess import VARIANTS, auto_fix
 
 Lines = list[list[tuple[str, float]]]
 CONFIG_PATH = Path(__file__).resolve().parent / "pipeline_config.json"
@@ -132,6 +132,7 @@ class PipelineEngine:
             self.predictor = WordPredictor(**self.cfg.lm_params)
 
     def recognize(self, image: Image.Image) -> str:
+        image, self.last_fixes = auto_fix(image)  # sideways / upside-down / inverted / dark pages
         variants: dict = {}
         readings = {s: read_source(s, image, self.engines, variants) for s in self.cfg.sources}
         return fuse(readings, self.cfg, self.predictor)
