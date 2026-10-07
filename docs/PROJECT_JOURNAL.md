@@ -196,3 +196,72 @@ measures of generalization.
 
 GLM-OCR also read a hard synthetic page and a real receipt very well, but took 150 s for the
 receipt on CPU. Speed is the main engineering problem for the next phases.
+
+---
+
+## Phase 0, round 2: pushing printed-text OCR further
+
+### R2.1 Infrastructure
+
+- HuggingFace, PyTorch and Kaggle access opened by the owner. The Kaggle token is stored only in
+  `/root/.kaggle` (never committed).
+- `.claude/hooks/session-start.sh`: every new cloud session installs Tesseract, CPU PyTorch and all
+  Python packages and downloads the free resources (fonts, books, tessdata_best, PaddleOCR ONNX
+  models, SmolLM2). Large models are not stored on GitHub (100 MB file limit; LFS is not free beyond
+  1 GB); they are re-downloaded automatically and kept in the environment snapshot.
+- Benchmark workers now pin ONNX Runtime and Tesseract to one thread each; before, every worker
+  grabbed all cores and runs crawled.
+
+### R2.2 A second real-world benchmark: CORD (phone photos)
+
+- CORD-v2 (CC BY 4.0): 100 dev + 100 test receipt **photos**. Only part of each photo is annotated
+  (headers blurred for privacy), so everything outside the padded word boxes is painted with the
+  local paper colour (taken from the brighter half of pixels inside the boxes; feathered edges).
+  Reference = annotated words grouped by `row_id`.
+- First measurement exposed a weakness invisible on scans: on photos the previous full pipeline
+  scored **79.45%** while RapidOCR alone scored 89.78%.
+
+### R2.3 Why enhancement hurt phone photos
+
+Ablation on 40 CORD dev photos (Tesseract eng_best):
+
+| Step | CORD photos | synthetic medium | synthetic hard |
+|---|---|---|---|
+| none | 76.25% | 96.98% | 34.55% |
+| deskew | 76.44% | - | - |
+| background normalization | **57.85%** | 99.24% | 50.47% |
+| normalization + contrast stretch (0.5%) | 50.52% | 99.10% | 41.73% |
+| CLAHE | 54.17% | 97.92% | 1.97% |
+| previous enhance (denoise + normalize) | 57.85% | 99.16% | 66.00% |
+
+Photos of faint dot-matrix receipts have almost no sensor noise (sigma 0.2 vs 2.1 for scans), so
+denoising never runs; background normalization whitens the paper but leaves the ink light grey and
+reveals paper texture, which Tesseract reads as glyphs. Contrast stretching amplifies that texture.
+Conclusion: enhancement must be chosen per image, and the voting must see raw and enhanced readings.
+
+### R2.4 Newer free recognizers: PaddleOCR PP-OCRv5 / PP-OCRv6
+
+Added via `rapidocr` v3 with models from huggingface.co/PaddlePaddle (Apache 2.0):
+`ppocr6s` (PP-OCRv6 small), `ppocr6m` (PP-OCRv6 medium, released June 2026),
+`ppocr5en` (PP-OCRv5 mobile with English-only recognizer). PP-OCRv5 server was dropped: 36 s per
+receipt on CPU.
+
+| Real dev sets | CORD acc | CORD WER | CORD word F1 | SROIE acc | SROIE WER |
+|---|---|---|---|---|---|
+| RapidOCR (PP-OCRv3) | 89.78% | 34.70% | 72.46% | 89.11% | 44.98% |
+| Tesseract eng_best | 76.60% | 48.73% | 60.58% | 84.17% | 42.44% |
+| PP-OCRv6 small | 89.45% | 21.92% | 86.89% | 91.60% | 22.84% |
+| **PP-OCRv6 medium** | 90.02% | 18.58% | 90.72% | 92.78% | **18.93%** |
+| **PP-OCRv6 medium, enhanced** | **92.01%** | **16.11%** | **91.68%** | **92.84%** | 19.47% |
+| PP-OCRv5 English | 88.85% | 23.38% | 84.57% | 92.03% | 19.74% |
+
+Unlike Tesseract, the PP-OCRv6 networks are robust to paper texture, so enhancement helps them even
+on photos.
+
+### R2.5 Neural word prediction (in progress)
+
+`ocr_engine/neural_lm.py`: SmolLM2-360M (Apache 2.0) scores the whole line (plus the previous line
+as context) for the top-k candidates of each suspicious word, combined with the OCR-aware edit cost
+and engine votes. On hand-made examples it fixed every case, including ones the bigram model broke
+(`fox jumps` stayed correct; `tomorow` -> `tomorrow`, `sorne` -> `some`, `tc` -> `to`). Speed and
+benchmark effect still to be measured on an idle CPU.
