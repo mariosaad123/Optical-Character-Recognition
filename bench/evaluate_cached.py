@@ -13,7 +13,10 @@ from pathlib import Path
 
 from bench.evaluate import to_markdown
 from bench.metrics import score
+from PIL import Image
+
 from ocr_engine.pipeline import PipelineConfig, fuse
+from ocr_engine.preprocess import noise_level, to_gray
 
 
 def _bigram(cfg: PipelineConfig):
@@ -36,7 +39,7 @@ def main():
     if cfg.use_lm:
         from ocr_engine.lm import WordPredictor
         predictor = WordPredictor(**cfg.lm_params)
-    no_lm = PipelineConfig(sources=cfg.sources, use_lm=False)
+    no_lm = PipelineConfig(**{**cfg.__dict__, "use_lm": False})
 
     systems = {s: PipelineConfig(sources={s: 1.0}, use_lm=False) for s in (a.sources or sorted(next(iter(cache.values()))))}
     if a.baseline:
@@ -44,11 +47,15 @@ def main():
     systems["pipeline (voting only)"] = no_lm
     systems["PIPELINE (voting + word prediction)"] = cfg
 
+    sigma = {}
+    if cfg.noisy:
+        sigma = {s["image"]: noise_level(to_gray(Image.open(a.data / s["image"]))) for s in samples}
     summary, preds = {}, defaultdict(list)
     for name, c in systems.items():
         agg = defaultdict(lambda: defaultdict(float))
         for s in samples:
-            hyp = fuse(cache[s["image"]], c, (predictor if c is cfg else _bigram(c)) if c.use_lm else None)
+            c_img = c.for_image(sigma.get(s["image"], 0.0)) if c is cfg or c is no_lm else c
+            hyp = fuse(cache[s["image"]], c_img, (predictor if c is cfg else _bigram(c)) if c.use_lm else None)
             m = score(s, hyp)
             for key in (s["level"], "all"):
                 for k, v in m.items():

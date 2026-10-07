@@ -16,7 +16,7 @@ from pathlib import Path
 from PIL import Image
 
 from .ensemble import Hypothesis, combine, to_lines
-from .preprocess import VARIANTS, auto_fix
+from .preprocess import VARIANTS, auto_fix, noise_level, to_gray
 
 Lines = list[list[tuple[str, float]]]
 CONFIG_PATH = Path(__file__).resolve().parent / "pipeline_config.json"
@@ -36,6 +36,15 @@ class PipelineConfig:
     # word prediction only runs when at least this share of the confidently read words are English
     # (receipts in other languages, codes or menus must not be "corrected" into English)
     english_gate: float = 0.0
+    # image-quality router: pages noisier than this (Immerkaer sigma) use the `noisy` voting config
+    noise_threshold: float = 99.0
+    noisy: dict | None = None
+
+    def for_image(self, sigma: float) -> "PipelineConfig":
+        """The config to use for an image with this noise level (word prediction settings are shared)."""
+        if self.noisy is None or sigma <= self.noise_threshold:
+            return self
+        return PipelineConfig(**{**self.__dict__, **self.noisy, "noisy": None})
 
     @classmethod
     def load(cls, path: Path = CONFIG_PATH) -> "PipelineConfig":
@@ -133,6 +142,7 @@ class PipelineEngine:
 
     def recognize(self, image: Image.Image) -> str:
         image, self.last_fixes = auto_fix(image)  # sideways / upside-down / inverted / dark pages
+        cfg = self.cfg.for_image(noise_level(to_gray(image)))
         variants: dict = {}
-        readings = {s: read_source(s, image, self.engines, variants) for s in self.cfg.sources}
-        return fuse(readings, self.cfg, self.predictor)
+        readings = {s: read_source(s, image, self.engines, variants) for s in cfg.sources}
+        return fuse(readings, cfg, self.predictor)
