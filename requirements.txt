@@ -1,6 +1,19 @@
+# PyTorch (CPU build) is installed separately, see .claude/hooks/session-start.sh:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
 pillow
 numpy
+opencv-python-headless
 rapidfuzz
 pytesseract
 rapidocr_onnxruntime
+rapidocr
+onnxruntime
+wordfreq
+pyyaml
+pandas
+pyarrow
+huggingface_hub
+transformers
+kaggle
 pytest
+ruff

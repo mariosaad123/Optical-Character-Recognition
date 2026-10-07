@@ -3,9 +3,11 @@
 - Google Fonts (OFL / Apache / UFL licensed) -> data/fonts/<family>/
 - Project Gutenberg texts (public domain, via the NLTK data mirror) -> data/corpus/gutenberg/
 - tessdata_best English model (Apache 2.0, float LSTM, fine-tunable) -> data/tessdata/
+- with --hf: PaddleOCR PP-OCRv5/v6 ONNX models (Apache 2.0) -> data/hf_models/, and the SmolLM2
+  language model used for word prediction (Apache 2.0) -> HuggingFace cache
 
 Usage:
-    python scripts/fetch_resources.py
+    python scripts/fetch_resources.py [--hf]
 """
 
 import io
@@ -91,7 +93,32 @@ def fetch_tessdata() -> None:
     print("tessdata: eng_best ok")
 
 
+HF_REPOS = [
+    "PaddlePaddle/PP-OCRv6_medium_det_onnx", "PaddlePaddle/PP-OCRv6_medium_rec_onnx",
+    "PaddlePaddle/PP-OCRv5_mobile_det_onnx", "PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx",
+]
+HF_CACHED = ["HuggingFaceTB/SmolLM2-360M"]  # loaded with from_pretrained, kept in the HF cache
+
+
+def fetch_hf_models() -> None:
+    """PaddleOCR ONNX models (Apache 2.0) + a plain keys.txt character list for each recognizer."""
+    import yaml
+    from huggingface_hub import snapshot_download
+
+    for repo in HF_REPOS:
+        out = ROOT / "hf_models" / repo.split("/")[1]
+        snapshot_download(repo, local_dir=str(out))
+        if repo.endswith("rec_onnx"):
+            chars = yaml.safe_load((out / "inference.yml").read_text())["PostProcess"]["character_dict"]
+            (out / "keys.txt").write_text("\n".join(chars) + "\n")
+    for repo in HF_CACHED:
+        snapshot_download(repo, allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model"])
+    print("hf models ok")
+
+
 if __name__ == "__main__":
     fetch_tessdata()
     fetch_gutenberg()
     fetch_fonts()
+    if "--hf" in sys.argv:
+        fetch_hf_models()
