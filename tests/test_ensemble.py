@@ -31,3 +31,15 @@ def test_spurious_word_dropped():
 def test_line_breaks_follow_pivot():
     out = combine([H("hello world\nsecond line"), H("hello world second line")])
     assert text(out) == "hello world\nsecond line"
+
+
+def test_char_vote_merges_partial_readings():
+    out = combine([H("total 60.000", conf=0.6), H("total 60,000", conf=0.6), H("total 00.000", conf=0.6),
+                   H("total 6O.000", conf=0.6)])
+    words = [s.best_by_chars()[0] for s in out]
+    assert words == ["total", "60.000"]
+
+
+def test_char_vote_leaves_agreement_alone():
+    out = combine([H("hello"), H("hello"), H("hallo")])
+    assert out[0].best_by_chars()[0] == "hello"

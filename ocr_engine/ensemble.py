@@ -31,12 +31,47 @@ class Slot:
     confs: dict[str, list[float]] = field(default_factory=lambda: defaultdict(list))  # engine confidences per reading
     voters: float = 0.0  # total weight of hypotheses that voted in this slot
     line_break_after: bool = False
+    readings: list[tuple[str, float]] = field(default_factory=list)  # every (reading, vote), for char voting
 
     def add(self, word: str, conf: float, weight: float) -> None:
         # A reading counts more when its engine is reliable (weight) and confident (conf).
-        self.votes[word] += weight * (0.3 + 0.7 * conf)
+        vote = weight * (0.3 + 0.7 * conf)
+        self.votes[word] += vote
         self.confs[word].append(conf)
         self.voters += weight
+        self.readings.append((word, vote))
+
+    def best_by_chars(self, max_share: float = 0.75) -> tuple[str, float]:
+        """Character-level vote inside the slot: when readers disagree, align every reading to the
+        winning word and vote per character position, so e.g. "60,000" / "00.000" / "60.000" can
+        yield the right word even if no single reader got it entirely right."""
+        word, share = self.best()
+        reads = [(w, v) for w, v in self.readings if w]
+        if not word or share >= max_share or len(reads) < 3:
+            return word, share
+        total = sum(v for _, v in reads)
+        cols = [defaultdict(float) for _ in word]      # per pivot character: votes for its replacement
+        ins = [defaultdict(float) for _ in range(len(word) + 1)]  # insertions before each position
+        for w, v in reads:
+            for tag, i1, i2, j1, j2 in Levenshtein.opcodes(word, w):
+                if tag == "equal" or (tag == "replace" and i2 - i1 == j2 - j1):
+                    for k in range(i2 - i1):
+                        cols[i1 + k][w[j1 + k]] += v
+                else:  # delete, insert or uneven replace: pivot chars dropped, reading's chars inserted
+                    for k in range(i1, i2):
+                        cols[k][""] += v
+                    if j2 > j1:
+                        ins[i1][w[j1:j2]] += v
+        out = []
+        for i in range(len(word) + 1):
+            if ins[i]:
+                piece, v = max(ins[i].items(), key=lambda kv: kv[1])
+                if v > total / 2:
+                    out.append(piece)
+            if i < len(word):
+                out.append(max(cols[i].items(), key=lambda kv: kv[1])[0])
+        merged = "".join(out)
+        return (merged or word), share
 
     def best(self) -> tuple[str, float]:
         word, score = max(self.votes.items(), key=lambda kv: kv[1])
@@ -143,10 +178,10 @@ def _fill_empty(slot: Slot, total_weight: float) -> None:
         slot.add("", 0.5, missing)
 
 
-def to_lines(slots: list[Slot]) -> list[Words]:
+def to_lines(slots: list[Slot], char_vote: bool = False) -> list[Words]:
     lines: list[Words] = [[]]
     for s in slots:
-        w, c = s.best()
+        w, c = s.best_by_chars() if char_vote else s.best()
         if w:
             lines[-1].append((w, c))
         if s.line_break_after:

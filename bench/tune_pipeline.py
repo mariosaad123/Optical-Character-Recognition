@@ -75,15 +75,18 @@ def main():
         configs = []
         for k in range(2, a.max_sources + 1):
             for subset in itertools.combinations(ranked, k):
-                for scale in (0.0, 1.0, 2.0):  # weight = (1 - CER)^scale*... sharper with higher scale
+                for scale in (0.0, 2.0):  # weight = (1 - CER)^(1 + 4 * scale): sharper with higher scale
                     w = {s: round((1 - single[s]) ** (1 + 4 * scale), 3) for s in subset}
-                    for mc in {0.0, min_conf}:
-                        configs.append({"sources": w, "use_lm": False, "min_conf": mc})
+                    for cv in (False, True):
+                        configs.append({"sources": w, "use_lm": False, "min_conf": min_conf, "char_vote": cv})
         scores = pool.map(_score, configs)
         best_vote = min(zip(scores, configs), key=lambda x: x[0])
         best_single = min(single.values())
         print(f"best voting config: {best_vote[1]['sources']} CER {best_vote[0]:.4f} (best single {best_single:.4f})")
         base = best_vote[1] if best_vote[0] < best_single else {"sources": {top: 1.0}, "min_conf": min_conf}
+        print("top voting configs:")
+        for sc, cfg in sorted(zip(scores, configs), key=lambda x: x[0])[:5]:
+            print(f"  {sc:.4f} char_vote={cfg['char_vote']} {cfg['sources']}")
 
         grid = [
             {**base, "use_lm": True, "lm_params": {"lam": lam, "mu": 3.0, "margin": mg, "keep_unknown": ku}}

@@ -32,6 +32,7 @@ class PipelineConfig:
     use_lm: bool = True
     lm_params: dict = field(default_factory=dict)
     min_conf: float = 0.0  # drop words below this confidence (noise read as glyphs)
+    char_vote: bool = False  # character-level voting inside disputed word slots
 
     @classmethod
     def load(cls, path: Path = CONFIG_PATH) -> "PipelineConfig":
@@ -81,11 +82,11 @@ def fuse(readings: dict[str, Lines], cfg: PipelineConfig, predictor=None) -> str
     hyps.sort(key=trust, reverse=True)
     slots = combine(hyps)
     if predictor is None or not cfg.use_lm:
-        return "\n".join(" ".join(w for w, _ in line) for line in to_lines(slots))
+        return "\n".join(" ".join(w for w, _ in line) for line in to_lines(slots, cfg.char_vote))
 
     lines, cur = [], []
     for s in slots:
-        word, share = s.best()
+        word, share = s.best_by_chars() if cfg.char_vote else s.best()
         if word:
             # certainty = agreement between readers x the engines' own confidence
             cur.append((word, share * s.engine_conf(word), s.candidates()))
