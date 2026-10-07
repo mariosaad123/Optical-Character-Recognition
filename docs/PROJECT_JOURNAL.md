@@ -318,3 +318,47 @@ Note: on SROIE, PP-OCRv6 medium alone has slightly higher character accuracy (95
 Benchmarking SmolLM2-360M rescoring on 155 dev pages did not finish in 2 hours on the shared CPU:
 pages with many uncertain words need dozens of batched forward passes. To be re-measured on an idle
 CPU with the 135M model; it stays off until it proves a gain worth its latency.
+
+### R2.11 auto_fix on the stress test (with vs without)
+
+| Pipeline | rot90 | rot180 | rot270 | inverted | colour | low light |
+|---|---|---|---|---|---|---|
+| without auto_fix | 61.5% | 32.5% | 30.4% | 98.7% | 94.6% | 94.8% |
+| **with auto_fix** | **94.7%** | **99.3%** | **96.7%** | **99.9%** | 94.6% | **97.3%** |
+
+### R2.12 Stage-3 training on real receipt lines
+
+- 6,626 real line crops from the CORD **train** split (CC BY 4.0), oversampled x3, mixed with 15k
+  general and 6k receipt-style synthetic lines; continued from `eng_ft2`, lr 5e-5, 12k iterations.
+- `eng_ft3last` (last checkpoint): CORD dev raw 74.73% -> **80.59%**, enhanced 64.62% -> 75.15%;
+  synthetic dev 93.56% -> 92.63%. `eng_ft3` (best checkpoint): synthetic dev **94.04%** (hard 82.68%).
+- Both enter the vote; re-tuned: main vote = PP-OCRv6 medium (enhanced) + PP-OCRv6 small + our
+  eng_ft3last on raw and enhanced images; noisy-page vote (sigma > 3) = PP-OCRv6 small + our
+  eng_ft2 (soft) + eng_ft3 (enhanced). Dev macro CER 7.23% -> **7.05%**.
+
+### R2.13 Final round-2 results (held-out tests)
+
+| Test set | Tesseract | PP-OCRv6 medium | Round-1 pipeline | **Round-2 pipeline** | WER r1 -> r2 | word F1 r2 |
+|---|---|---|---|---|---|---|
+| Synthetic v2 (450) | 69.37% | 82.20% | 88.89% | **88.90%** | 18.21% -> **17.93%** | 85.02% |
+| SROIE scans (100) | 87.10% | 95.51% | 91.91% | **94.97%** | 25.06% -> **16.99%** | 88.01% |
+| CORD photos (100) | 63.11% | 89.13% | 76.01% | **92.72%** | 49.98% -> **15.44%** | 89.13% |
+| Stress (240) | - | - | ~61% / 32% / 30% on rotated pages | **94.7-99.9%** | | |
+
+Averaged over the three main tests, word error fell from 31.1% (round 1) to 16.8% (round 2).
+
+### R2.14 Speed (CPU, 4 cores, no GPU)
+
+Clean page 3.9 s, receipt photo 4.6 s, scanned receipt 11.3 s, very noisy page 19.6 s.
+Running the readers in parallel threads made it 3-13x **slower** (each reader grabs every core);
+reverted. Speed work (smaller variants, quantization, skipping readers when the first ones agree)
+belongs to the product phase.
+
+### R2.15 Lessons from round 2
+
+1. A benchmark of one kind (scans) hid a large weakness (photos): add every real input type early.
+2. Preprocessing that helps one engine can hurt another (normalization helps PP-OCR, hurts Tesseract
+   on photos): let the vote see both raw and enhanced readings.
+3. Newer free models can leapfrog everything (PP-OCRv6, June 2026): re-survey the model hub often.
+4. A trained model is most valuable where the general models are weak (noisy pages): route by quality.
+5. Real training data beats synthetic for real inputs (+6 points on receipt photos from 6.6k lines).

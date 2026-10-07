@@ -29,43 +29,21 @@ image ─┬─ enhanced (strong adaptive denoise + deskew + background normaliz
 
 ## Results (held-out test sets, CPU only)
 
-Accuracy = 1 - CER (character error rate). WER = word error rate (lower is better).
-Word F1 = order-independent word accuracy.
+Accuracy = 1 - CER. WER = word error rate (lower is better).
 
-**Synthetic v2 test** (450 images; fonts and books never used for training or tuning):
+| Test set | Tesseract | PP-OCRv6 medium | **Our pipeline** | Pipeline WER |
+|---|---|---|---|---|
+| Synthetic v2 (450 images, unseen fonts and books) | 69.37% | 82.20% | **88.90%** | 17.93% |
+| SROIE scanned receipts (100) | 87.10% | 95.51% | **94.97%** | 16.99% |
+| CORD receipt photos (100) | 63.11% | 89.13% | **92.72%** | 15.44% |
+| Stress: rotated / inverted / coloured / dark pages (240) | - | - | **94.7% - 99.9%** | |
 
-| System | clean | medium | hard | overall | WER | word F1 |
-|---|---|---|---|---|---|---|
-| Tesseract (default) | 99.32% | 86.04% | 22.74% | 69.37% | 56.27% | 71.49% |
-| Tesseract eng_best | 99.38% | 91.45% | 34.41% | 75.08% | 46.60% | 71.95% |
-| RapidOCR | 95.51% | 89.84% | 37.87% | 74.41% | 50.17% | 52.94% |
-| Our model + enhancement | 99.36% | 95.41% | **74.55%** | **89.77%** | 22.41% | 81.83% |
-| **Full pipeline** | **99.59%** | **95.83%** | 71.24% | 88.89% | **18.21%** | **84.25%** |
+What the pipeline does: automatic orientation / polarity / exposure fix -> noise-adaptive enhancement
+-> four readers (PaddleOCR PP-OCRv6 medium and small, and our own Tesseract models fine-tuned on
+synthetic and real receipt lines) -> image-quality router (noisy pages use a vote led by our models)
+-> word- and character-level voting -> word prediction with an English gate.
 
-**Real scanned receipts** (ICDAR-2019 SROIE, 100 receipts; evaluation only, case-insensitive
-because the official transcripts are upper-cased):
-
-| System | accuracy | WER | word F1 |
-|---|---|---|---|
-| Tesseract (default) | 87.10% | 37.85% | 73.04% |
-| Tesseract eng_best | 88.13% | 36.18% | 74.16% |
-| RapidOCR | 90.87% | 46.83% | 62.79% |
-| Our model + enhancement | 89.19% | 34.22% | 75.25% |
-| **Full pipeline** | **91.91%** | **25.06%** | **81.57%** |
-
-**Original v1 test** (the first benchmark of this project, 300 images):
-
-| System | clean | medium | hard | overall | WER |
-|---|---|---|---|---|---|
-| Tesseract (default) | 99.87% | 97.71% | 42.81% | 80.13% | 42.61% |
-| First router (Tesseract -> RapidOCR) | 99.87% | 98.11% | 63.18% | 87.05% | 24.26% |
-| **Full pipeline** | 99.86% | **99.93%** | **92.01%** | **97.27%** | **8.49%** |
-
-Caveat: v1 uses the system fonts and the random document-style text generator that are also part of
-our model's training data, so it is easier for our model than v2 or the real receipts. Use v2 and the
-real receipts to judge generalization.
-
-Full tables: `results/v2_test/RESULTS.md`, `results/real_test/RESULTS.md`, `results/v1_test/RESULTS.md`.
+The full history, every experiment and every number: [docs/PROJECT_JOURNAL.md](docs/PROJECT_JOURNAL.md).
 
 ## Setup
 
