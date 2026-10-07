@@ -8,4 +8,4 @@
 | ppocr6m/enhanced | 92.72% | 92.72% | 15.82% | 88.79% | 0.00 |
 | previous pipeline | 76.01% | 76.01% | 49.96% | 68.29% | 0.00 |
 | pipeline (voting only) | 92.68% | 92.68% | 16.11% | 88.38% | 0.00 |
-| PIPELINE (voting + word prediction) | 92.52% | 92.52% | 17.35% | 87.21% | 0.00 |
+| PIPELINE (voting + word prediction) | 92.58% | 92.58% | 17.03% | 87.55% | 0.00 |

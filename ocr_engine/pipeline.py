@@ -103,7 +103,8 @@ def fuse(readings: dict[str, Lines], cfg: PipelineConfig, predictor=None) -> str
     out = []
     for line in lines:
         words = [w for w, _, _ in line]
-        fixed = predictor.correct_line(words, alts=[c for _, _, c in line], confs=[s for _, s, _ in line])
+        fixed = predictor.correct_line(words, alts=[c for _, _, c in line], confs=[s for _, s, _ in line],
+                                       context=out[-1] if out else "")
         out.append(" ".join(fixed))
     return "\n".join(out)
 

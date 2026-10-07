@@ -5,9 +5,10 @@
     "rapidocr/raw": 0.863,
     "tesseract-eng_ft2/enhanced": 0.805
   },
-  "use_lm": true,
   "min_conf": 0.0,
   "char_vote": true,
+  "use_lm": true,
+  "english_gate": 0.9,
   "lm_params": {
     "lam": 10.0,
     "mu": 3.0,

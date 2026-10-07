@@ -141,7 +141,7 @@ def auto_fix(image: Image.Image) -> tuple[Image.Image, list[str]]:
     gray = image.convert("L")
     arr = np.asarray(gray)
     fixes = []
-    if np.median(arr) < 100 and np.percentile(arr, 95) - np.median(arr) > 40:
+    if np.median(arr) < 100 and np.percentile(arr, 99.5) - np.median(arr) > 60:
         # mostly dark with bright details: light text on a dark background
         gray, arr = ImageOps.invert(gray), 255 - arr
         fixes.append("invert")
@@ -158,14 +158,21 @@ def auto_fix(image: Image.Image) -> tuple[Image.Image, list[str]]:
         sizes = [(np.ptp(np.asarray(b)[:, 0]), np.ptp(np.asarray(b)[:, 1])) for b in boxes]
         vertical = sum(h > 1.5 * w for w, h in sizes) > len(sizes) / 2
         mean_conf = sum(scores) / len(scores)
-        candidates = (90, 270) if vertical else ((180,) if mean_conf < 0.85 else ())
-        best_rot, best = 0, base
-        for rot in candidates:
-            r = _readability(*_read_boxes(gray.rotate(rot, expand=True, fillcolor=int(np.median(arr))))[1:])
-            if r > best:
-                best_rot, best = rot, r
-        # keep a rotation only when it is clearly better than leaving the page as it is
-        if best_rot and best > 1.3 * base + 5:
-            gray = gray.rotate(best_rot, expand=True, fillcolor=int(np.median(arr)))
+        fill = int(np.median(arr))
+        best_rot = 0
+        if vertical:
+            # a sideways page: the reader auto-turns tall crops one way only, so the untouched page is no
+            # fair reference; compare the two upright candidates with each other instead
+            r90, r270 = (_readability(*_read_boxes(gray.rotate(r, expand=True, fillcolor=fill))[1:]) for r in (90, 270))
+            best_rot = 90 if r90 >= r270 else 270
+            if max(r90, r270) < 1.15 * min(r90, r270) + 5:
+                best_rot = 0
+        elif mean_conf < 0.85:
+            r180 = _readability(*_read_boxes(gray.rotate(180, expand=True, fillcolor=fill))[1:])
+            # keep the flip only when it is clearly better than leaving the page as it is
+            if r180 > 1.3 * base + 5:
+                best_rot = 180
+        if best_rot:
+            gray = gray.rotate(best_rot, expand=True, fillcolor=fill)
             fixes.append(f"rotate{best_rot}")
     return (gray if fixes else image), fixes
