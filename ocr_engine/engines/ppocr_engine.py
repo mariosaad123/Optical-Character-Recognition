@@ -25,7 +25,7 @@ VARIANTS = {
 
 
 class PPOCREngine(OCREngine):
-    def __init__(self, variant: str = "ppocr6m"):
+    def __init__(self, variant: str = "ppocr6m", use_cls: bool = True):
         from rapidocr import RapidOCR
 
         self.name = variant
@@ -35,6 +35,7 @@ class PPOCREngine(OCREngine):
             # the voting step weighs them by confidence instead
             "Global.width_height_ratio": -1,
             "Global.text_score": 0.3,
+            "Global.use_cls": use_cls,
             # parallel benchmark workers set OCR_ORT_THREADS=1 to avoid oversubscribing the CPU
             "EngineConfig.onnxruntime.intra_op_num_threads": int(os.environ.get("OCR_ORT_THREADS", "-1")),
         }

@@ -15,9 +15,11 @@ deskew, and background normalization (shadows / uneven light). Two strengths are
 as separate variants so the voting step gets diverse readings.
 """
 
+import re
+
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
 def to_gray(image: Image.Image) -> np.ndarray:
     return np.asarray(image.convert("L"))
@@ -111,3 +113,59 @@ VARIANTS = {
     "soft": lambda im: enhance(im, strength=3.0),
     "binary": lambda im: binarize(enhance(im)),
 }
+
+
+_orient_reader = None
+
+
+def _read_boxes(gray: Image.Image):
+    """PP-OCRv6 small without its 180-degree line classifier: (boxes, texts, scores)."""
+    global _orient_reader
+    if _orient_reader is None:
+        from .engines.ppocr_engine import PPOCREngine
+        _orient_reader = PPOCREngine("ppocr6s", use_cls=False)
+    r = _orient_reader.ocr(np.array(gray.convert("RGB")))
+    if r.boxes is None or not r.txts:
+        return [], [], []
+    return list(r.boxes), list(r.txts), [float(x) for x in r.scores]
+
+
+def _readability(texts, scores) -> float:
+    """Confidently read characters: an upright page yields many, a rotated one few."""
+    return sum(len(t) * s for t, s in zip(texts, scores) if s > 0.5)
+
+
+def auto_fix(image: Image.Image) -> tuple[Image.Image, list[str]]:
+    """Undo conditions that break every engine: light-on-dark text, very dark photos, sideways or
+    upside-down pages. Each fix is applied only when clearly needed; returns (image, fixes)."""
+    gray = image.convert("L")
+    arr = np.asarray(gray)
+    fixes = []
+    if np.median(arr) < 100 and np.percentile(arr, 95) - np.median(arr) > 40:
+        # mostly dark with bright details: light text on a dark background
+        gray, arr = ImageOps.invert(gray), 255 - arr
+        fixes.append("invert")
+    if np.median(arr) < 120:
+        # the paper itself is dark: under-exposed photo. Stretch the used range to the full range.
+        lo, hi = np.percentile(arr, 0.5), np.percentile(arr, 99.5)
+        arr = np.clip((arr.astype(np.float32) - lo) * 255.0 / max(1.0, hi - lo), 0, 255).astype(np.uint8)
+        gray = Image.fromarray(arr)
+        fixes.append("exposure")
+
+    boxes, texts, scores = _read_boxes(gray)
+    base = _readability(texts, scores)
+    if boxes:
+        sizes = [(np.ptp(np.asarray(b)[:, 0]), np.ptp(np.asarray(b)[:, 1])) for b in boxes]
+        vertical = sum(h > 1.5 * w for w, h in sizes) > len(sizes) / 2
+        mean_conf = sum(scores) / len(scores)
+        candidates = (90, 270) if vertical else ((180,) if mean_conf < 0.85 else ())
+        best_rot, best = 0, base
+        for rot in candidates:
+            r = _readability(*_read_boxes(gray.rotate(rot, expand=True, fillcolor=int(np.median(arr))))[1:])
+            if r > best:
+                best_rot, best = rot, r
+        # keep a rotation only when it is clearly better than leaving the page as it is
+        if best_rot and best > 1.3 * base + 5:
+            gray = gray.rotate(best_rot, expand=True, fillcolor=int(np.median(arr)))
+            fixes.append(f"rotate{best_rot}")
+    return (gray if fixes else image), fixes

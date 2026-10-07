@@ -264,6 +264,45 @@ def generate_v2(out_dir: Path, per_level: int, seed: int, split: str) -> None:
     print(f"Wrote {len(manifest)} samples ({len(fonts)} {split} fonts) to {out_dir}")
 
 
+STRESS = ["rot90", "rot180", "rot270", "inverted", "color", "lowlight"]
+
+
+def stress(img: Image.Image, kind: str, rng: random.Random) -> Image.Image:
+    """Real-world conditions the other benchmarks don't cover (applied after a medium degradation)."""
+    if kind.startswith("rot"):
+        return img.rotate(int(kind[3:]), expand=True)  # page photographed sideways / upside down
+    if kind == "inverted":
+        return Image.eval(img, lambda v: 255 - v)  # light text on a dark background
+    arr = np.asarray(img).astype(np.float32) / 255.0
+    if kind == "color":
+        paper = np.array([rng.uniform(0.55, 1.0) for _ in range(3)])
+        ink = np.array([rng.uniform(0.0, 0.45) for _ in range(3)])
+        rgb = ink + (paper - ink) * arr[..., None]  # coloured ink on coloured paper
+        return Image.fromarray(np.clip(rgb * 255, 0, 255).astype(np.uint8))
+    if kind == "lowlight":
+        gain, offset = rng.uniform(0.18, 0.35), rng.uniform(5, 20)  # dark, low-contrast photo
+        noisy = arr * 255 * gain + offset + np.random.default_rng(rng.randint(0, 2**32 - 1)).normal(0, 3, arr.shape)
+        return Image.fromarray(np.clip(noisy, 0, 255).astype(np.uint8))
+    raise ValueError(kind)
+
+
+def generate_stress(out_dir: Path, per_kind: int, seed: int, split: str) -> None:
+    rng = random.Random(seed)
+    fonts = [f for f in resources.fonts_for(split) if not resources.is_handwriting(f)]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    manifest = []
+    for kind in STRESS:
+        for i in range(per_kind):
+            n_lines = rng.randint(2, 7)
+            lines = resources.prose_lines(rng, split, n_lines) if rng.random() < 0.6 else [make_line(rng) for _ in range(n_lines)]
+            img = degrade_v2(render(lines, rng.choice(fonts), rng.randint(22, 40), rng, vary=True), "medium", rng)
+            name = f"{kind}_{i:04d}.png"
+            stress(img, kind, rng).save(out_dir / name)
+            manifest.append({"image": name, "level": kind, "text": "\n".join(lines)})
+    (out_dir / "manifest.jsonl").write_text("\n".join(json.dumps(m) for m in manifest) + "\n")
+    print(f"Wrote {len(manifest)} stress samples to {out_dir}")
+
+
 def generate(out_dir: Path, per_level: int, seed: int) -> None:
     rng = random.Random(seed)
     fonts = find_fonts()
@@ -288,11 +327,13 @@ def main():
     p.add_argument("--out", type=Path, default=Path("data/bench_en"))
     p.add_argument("--per-level", type=int, default=100)
     p.add_argument("--seed", type=int, default=1234)
-    p.add_argument("--version", choices=["v1", "v2"], default="v1")
+    p.add_argument("--version", choices=["v1", "v2", "stress"], default="v1")
     p.add_argument("--split", choices=["train", "dev", "test"], default="test")
     a = p.parse_args()
     if a.version == "v1":
         generate(a.out, a.per_level, a.seed)
+    elif a.version == "stress":
+        generate_stress(a.out, a.per_level, a.seed, a.split)
     else:
         generate_v2(a.out, a.per_level, a.seed, a.split)
 
