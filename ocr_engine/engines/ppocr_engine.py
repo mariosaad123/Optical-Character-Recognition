@@ -6,6 +6,7 @@ Variants (models from huggingface.co/PaddlePaddle, fetched by scripts/fetch_reso
     ppocr5en  PP-OCRv5 mobile det + English-only PP-OCRv5 mobile rec
 """
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -34,6 +35,8 @@ class PPOCREngine(OCREngine):
             # the voting step weighs them by confidence instead
             "Global.width_height_ratio": -1,
             "Global.text_score": 0.3,
+            # parallel benchmark workers set OCR_ORT_THREADS=1 to avoid oversubscribing the CPU
+            "EngineConfig.onnxruntime.intra_op_num_threads": int(os.environ.get("OCR_ORT_THREADS", "-1")),
         }
         models = VARIANTS[variant]
         if models:

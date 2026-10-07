@@ -13,6 +13,7 @@ from multiprocessing import Pool
 from pathlib import Path
 
 os.environ.setdefault("OMP_THREAD_LIMIT", "1")  # one thread per Tesseract call; we parallelize over images
+os.environ.setdefault("OCR_ORT_THREADS", "1")  # same for ONNX Runtime engines
 
 from PIL import Image  # noqa: E402
 
