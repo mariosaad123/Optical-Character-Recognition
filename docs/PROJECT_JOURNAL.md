@@ -265,3 +265,56 @@ as context) for the top-k candidates of each suspicious word, combined with the 
 and engine votes. On hand-made examples it fixed every case, including ones the bigram model broke
 (`fox jumps` stayed correct; `tomorow` -> `tomorrow`, `sorne` -> `some`, `tc` -> `to`). Speed and
 benchmark effect still to be measured on an idle CPU.
+
+### R2.6 Language gate for word prediction
+
+CORD receipts are Indonesian; English word prediction "corrected" menu words. `english_gate`:
+word prediction only runs on pages where >= 90% of confidently read alphabetic words are English
+(threshold tuned on dev). CORD test WER with word prediction: 17.35% -> 17.03%. With the much
+stronger readers the bigram word prediction is now nearly neutral (dev 0.0769 -> 0.0767).
+
+### R2.7 Automatic orientation / polarity / exposure (`preprocess.auto_fix`)
+
+- Light-on-dark pages are inverted; pages whose paper is dark are contrast-stretched.
+- Orientation: PP-OCRv6 small reads the page with its 180-degree line classifier off. Mostly-vertical
+  line boxes -> sideways page: compare the 90 and 270 rotations with each other (the reader auto-turns
+  tall crops one way, so the untouched page is no fair reference). Low mean confidence -> try 180 and
+  keep it only if it reads >1.3x better.
+- Two bugs fixed while measuring: exposure fix fired on 70% of CORD photos (percentile range of a mostly
+  white page looks "low contrast"; now requires dark paper) and 270-degree pages were never fixed.
+- Dev check: 119/120 stress pages fixed correctly, 0/83 normal pages changed.
+
+Stress test (240 pages, held-out fonts/books, accuracy = 1 - CER, with auto_fix):
+
+| System | rot90 | rot180 | rot270 | inverted | colour | low light |
+|---|---|---|---|---|---|---|
+| Tesseract | 94.7% | 95.4% | 94.5% | 97.3% | 82.8% | 87.8% |
+| PP-OCRv6 medium | 93.4% | 97.3% | 95.4% | 99.3% | 89.8% | 94.8% |
+| **Full pipeline** | 94.7% | **99.3%** | **96.7%** | **99.9%** | **94.6%** | **97.3%** |
+
+### R2.8 Voting v2 and the image-quality router
+
+- Character-level voting inside disputed word slots (`Slot.best_by_chars`): tiny gain (dev 0.0770 ->
+  0.0769), kept.
+- Voting tuned on three dev sets (synthetic, SROIE, CORD; macro average): PP-OCRv6 medium (enhanced),
+  PP-OCRv6 small, RapidOCR and our Tesseract model. Dev CER 9.54% (best single) -> 7.69%.
+- On noisy synthetic pages PP-OCR is weak (hard 57.7%) while our fine-tuned Tesseract is strong (74.6%).
+  **Router**: pages with noise sigma > 3.0 use a separate vote (PP-OCRv6 small + our two Tesseract
+  models). Threshold and sources tuned on dev: 7.69% -> 7.23%.
+
+### R2.9 Results after round 2 (held-out test sets)
+
+| Test set | Tesseract | PP-OCRv6 medium | Round-1 pipeline | **Round-2 pipeline** | WER r1 -> r2 |
+|---|---|---|---|---|---|
+| Synthetic v2 (450) | 69.37% | 82.20% | 88.89% | **89.38%** | 18.21% -> 18.02% |
+| SROIE scans (100) | 87.10% | 95.51% | 91.91% | **94.85%** | 25.06% -> 16.84% |
+| CORD photos (100) | 63.11% | 89.13% | 76.01% | **92.58%** | 49.98% -> 17.03% |
+
+Note: on SROIE, PP-OCRv6 medium alone has slightly higher character accuracy (95.51%) and word error
+(16.27%); the pipeline wins on synthetic and CORD and is the only system that is strong everywhere.
+
+### R2.10 Neural word prediction: too slow as built
+
+Benchmarking SmolLM2-360M rescoring on 155 dev pages did not finish in 2 hours on the shared CPU:
+pages with many uncertain words need dozens of batched forward passes. To be re-measured on an idle
+CPU with the 135M model; it stays off until it proves a gain worth its latency.

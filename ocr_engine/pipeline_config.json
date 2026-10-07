@@ -14,5 +14,14 @@
     "mu": 3.0,
     "margin": 1.0,
     "keep_unknown": 0.5
+  },
+  "noise_threshold": 3.0,
+  "noisy": {
+    "sources": {
+      "ppocr6s/raw": 1.0,
+      "tesseract-eng_ft2/soft": 1.0,
+      "tesseract-eng_ft2last/enhanced": 1.0
+    },
+    "char_vote": true
   }
 }
