@@ -19,6 +19,7 @@ from ocr_engine.pipeline import PipelineConfig, fuse
 
 _ctx = {}
 MIN_CONFS = (0.0, 0.1, 0.2, 0.3, 0.4)
+KEEP = ("noise_threshold", "noisy", "cascade")
 
 
 def load(dirs: list[Path]):
@@ -67,6 +68,7 @@ def tune_lm_only(a) -> None:
     for sc, cfg in sorted(zip(lm_scores, grid), key=lambda x: x[0])[:5]:
         print(f"  {sc:.4f} gate={cfg['english_gate']} {cfg['lm_params']}")
     final = best_lm[1] if best_lm[0] < no_lm else {**base, "use_lm": False}
+    final |= {k: saved[k] for k in KEEP if k in saved}
     a.out.write_text(json.dumps(final, indent=2))
     print(f"saved {a.out}: use_lm={final['use_lm']}")
 
@@ -122,6 +124,9 @@ def main():
     best_lm = min(zip(lm_scores, grid), key=lambda x: x[0])
     print(f"best word-prediction config: {best_lm[1]['lm_params']} CER {best_lm[0]:.4f} (without: {no_lm:.4f})")
     final = best_lm[1] if best_lm[0] < no_lm else {**base, "use_lm": False}
+    if a.out.exists():  # settings tuned by other scripts (router, cascade) survive a re-tune
+        saved = json.loads(a.out.read_text())
+        final |= {k: saved[k] for k in KEEP if k in saved}
     a.out.write_text(json.dumps(final, indent=2))
     print(f"saved {a.out}")
 

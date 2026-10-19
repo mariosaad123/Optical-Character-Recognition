@@ -1,7 +1,7 @@
 {
   "sources": {
-    "ppocr6m/enhanced": 0.406,
-    "ppocr6s/raw": 0.346,
+    "ppocr6m/enhanced": 0.452,
+    "ppocr6s/raw": 0.375,
     "tesseract-eng_ft3last/enhanced": 0.221,
     "tesseract-eng_ft3last/raw": 0.196
   },
@@ -12,7 +12,7 @@
   "lm_params": {
     "lam": 10.0,
     "mu": 3.0,
-    "margin": 3.0,
+    "margin": 1.0,
     "keep_unknown": 0.5
   },
   "noise_threshold": 3.0,
