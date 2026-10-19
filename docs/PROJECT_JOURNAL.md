@@ -362,3 +362,58 @@ belongs to the product phase.
 3. Newer free models can leapfrog everything (PP-OCRv6, June 2026): re-survey the model hub often.
 4. A trained model is most valuable where the general models are weak (noisy pages): route by quality.
 5. Real training data beats synthetic for real inputs (+6 points on receipt photos from 6.6k lines).
+
+## Phase 0, round 3: finishing touches (accuracy and speed)
+
+### R3.1 Neural word prediction, measured on an idle CPU
+
+Dev subsets (30 synthetic, 20 CORD, 15 SROIE pages), accuracy = 1 - CER:
+
+| Word prediction | synthetic | CORD | SROIE | time per page |
+|---|---|---|---|---|
+| none | 91.250% | 89.584% | 94.417% | - |
+| bigram (books + wordfreq) | 91.293% | 89.584% | 94.419% | 0.01-0.09 s |
+| SmolLM2-135M rescoring | 91.386% | 89.584% | 94.419% | 0.3-2.4 s |
+| SmolLM2-360M rescoring | 91.386% | 89.584% | 94.419% | 0.7-4.9 s |
+
+Decision: keep the bigram predictor as default. With strong readers almost no errors are left for
+word prediction to fix; the neural model gains 0.1 points on synthetic pages only, at ~2 s per page.
+It remains available (`ocr_engine/neural_lm.py`) for an "accurate" mode.
+
+### R3.2 Per-source timing and the speed cascade
+
+Average time per page on this CPU (4 cores): our Tesseract model on raw 0.61 s, PP-OCRv6 small 1.84 s,
+auto_fix 1.86 s, our Tesseract model on an enhanced image ~2.0 s, PP-OCRv6 medium enhanced 5.47 s.
+
+Cascade (`bench/tune_cascade.py`): our Tesseract model (raw) and PP-OCRv6 small run first; if their
+texts agree (character similarity >= tau) their vote is final, else the expensive readers are added.
+
+| tau | dev macro CER | avg reading time |
+|---|---|---|
+| off (always full) | 7.12% | 9.9 s |
+| 0.98 (default "balanced") | 7.14% | 8.3 s |
+| 0.85 ("fast") | 7.49% | 5.4 s |
+| cheap readers only | 9.43% | 2.5 s |
+
+auto_fix's own PP-OCRv6-small reading (needed for the orientation check) is now reused as the
+`ppocr6s/raw` source when no rotation is applied (verified identical), saving ~1.8 s per page.
+Live end-to-end time per page (incl. auto_fix): accurate 7.0 s, balanced 5.7 s, fast 4.5 s.
+Running readers in parallel threads was 3-13x slower on 4 cores and was reverted.
+
+### R3.3 PaddleOCR's 180-degree line classifier hurts upright pages
+
+PP-OCRv6 small, 20 dev pages per set, with vs without the line classifier: synthetic 93.86% vs
+**94.80%**, CORD 91.45% vs **92.55%**, SROIE 92.72% vs **93.17%**. It flips correct lines; upside-down
+pages are already handled once per page by auto_fix. Disabled for all PaddleOCR readers, all PP-OCR
+readings re-computed, everything re-tuned: dev macro CER 7.05% -> **6.79%**.
+
+### R3.4 Phase 0 final results (held-out tests)
+
+| Test set | Tesseract | PP-OCRv6 medium | Round 1 | Round 2 | **Round 3 (final)** | Final WER | Final word F1 |
+|---|---|---|---|---|---|---|---|
+| Synthetic v2 (450) | 69.37% | 84.87% | 88.89% | 88.90% | **89.94%** | 16.99% | 85.70% |
+| SROIE scans (100) | 87.10% | 95.62% | 91.91% | 94.97% | **95.09%** | 16.80% | 88.21% |
+| CORD photos (100) | 63.11% | 89.92% | 76.01% | 92.72% | **93.17%** | 14.39% | 90.36% |
+
+Word error averaged over the three tests: round 1 31.1% -> round 2 16.8% -> **round 3 16.1%**
+(Tesseract alone: 55.2%).
