@@ -33,10 +33,12 @@ Accuracy = 1 - CER. WER = word error rate (lower is better).
 
 | Test set | Tesseract | PP-OCRv6 medium | **Our pipeline** | Pipeline WER |
 |---|---|---|---|---|
-| Synthetic v2 (450 images, unseen fonts and books) | 69.37% | 82.20% | **88.90%** | 17.93% |
-| SROIE scanned receipts (100) | 87.10% | 95.51% | **94.97%** | 16.99% |
-| CORD receipt photos (100) | 63.11% | 89.13% | **92.72%** | 15.44% |
-| Stress: rotated / inverted / coloured / dark pages (240) | - | - | **94.7% - 99.9%** | |
+| Synthetic v2 (450 images, unseen fonts and books) | 69.37% | 84.87% | **89.94%** | 16.99% |
+| SROIE scanned receipts (100) | 87.10% | 95.62% | **95.09%** | 16.80% |
+| CORD receipt photos (100) | 63.11% | 89.92% | **93.17%** | 14.39% |
+| Stress: rotated / inverted / coloured / dark pages (240) | - | - | **93.7% - 99.7%** | |
+
+Speed on a 4-core CPU, end to end: 5.7 s per page (balanced mode), 4.5 s (fast), 7.0 s (accurate).
 
 What the pipeline does: automatic orientation / polarity / exposure fix -> noise-adaptive enhancement
 -> four readers (PaddleOCR PP-OCRv6 medium and small, and our own Tesseract models fine-tuned on

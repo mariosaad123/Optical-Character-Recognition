@@ -417,3 +417,11 @@ readings re-computed, everything re-tuned: dev macro CER 7.05% -> **6.79%**.
 
 Word error averaged over the three tests: round 1 31.1% -> round 2 16.8% -> **round 3 16.1%**
 (Tesseract alone: 55.2%).
+
+Stress test (240 pages) with the final config: without auto_fix rot90 16.1%, rot180 13.9%, rot270 28.7%,
+inverted 99.5%, colour 93.7%, low light 94.9%; **with auto_fix 94.5% / 99.5% / 97.2% / 99.7% / 93.7% /
+96.7%**. (Without auto_fix the rotated pages now score lower than in round 2 because PaddleOCR's line
+classifier, which used to rescue some upside-down lines, is off; auto_fix makes that irrelevant.)
+
+**Phase 0 status: complete.** Remaining ideas (larger real training sets, GPU-trained recognizers) are
+carried into the later phases.
