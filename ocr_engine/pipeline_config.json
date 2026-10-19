@@ -23,5 +23,11 @@
       "tesseract-eng_ft3/enhanced": 1.0
     },
     "char_vote": true
+  },
+  "cascade": {
+    "cheap": [
+      "tesseract-eng_ft3last/raw",
+      "ppocr6s/raw"
+    ]
   }
 }

@@ -15,3 +15,10 @@ def test_fuse_handles_empty_sources():
     cfg = PipelineConfig(sources={"a/raw": 1.0, "b/raw": 1.0}, use_lm=False)
     assert fuse({"a/raw": [], "b/raw": R("hello world")}, cfg) == "hello world"
     assert fuse({"a/raw": [], "b/raw": []}, cfg) == ""
+
+
+def test_cascade_agreement():
+    from ocr_engine.pipeline import cascade_agreement
+    same = {"a/raw": R("total 60.000"), "b/raw": R("total 60.000")}
+    assert cascade_agreement(same, ["a/raw", "b/raw"]) == 1.0
+    assert cascade_agreement({"a/raw": R("x"), "b/raw": []}, ["a/raw", "b/raw"]) == 0.0

@@ -135,9 +135,11 @@ def _readability(texts, scores) -> float:
     return sum(len(t) * s for t, s in zip(texts, scores) if s > 0.5)
 
 
-def auto_fix(image: Image.Image) -> tuple[Image.Image, list[str]]:
+def auto_fix(image: Image.Image, readings: dict | None = None) -> tuple[Image.Image, list[str]]:
     """Undo conditions that break every engine: light-on-dark text, very dark photos, sideways or
-    upside-down pages. Each fix is applied only when clearly needed; returns (image, fixes)."""
+    upside-down pages. Each fix is applied only when clearly needed; returns (image, fixes).
+    If `readings` is given and the page needed no rotation, the PP-OCRv6-small reading made for the
+    orientation check is stored there as "ppocr6s/raw", so the pipeline does not read the page twice."""
     gray = image.convert("L")
     arr = np.asarray(gray)
     fixes = []
@@ -175,4 +177,8 @@ def auto_fix(image: Image.Image) -> tuple[Image.Image, list[str]]:
         if best_rot:
             gray = gray.rotate(best_rot, expand=True, fillcolor=fill)
             fixes.append(f"rotate{best_rot}")
+        elif readings is not None:
+            from .engines.rapidocr_engine import _reading_order
+            items = [(b.tolist(), t, sc) for b, t, sc in zip(boxes, texts, scores) if t.strip()]
+            readings["ppocr6s/raw"] = _reading_order(items)
     return (gray if fixes else image), fixes

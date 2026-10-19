@@ -1,0 +1,9 @@
+{
+  "ppocr6m/enhanced": 5.466,
+  "ppocr6s/raw": 1.841,
+  "tesseract-eng_ft2/soft": 2.035,
+  "tesseract-eng_ft3/enhanced": 2.0,
+  "tesseract-eng_ft3last/enhanced": 1.996,
+  "tesseract-eng_ft3last/raw": 0.611,
+  "auto_fix": 1.861
+}

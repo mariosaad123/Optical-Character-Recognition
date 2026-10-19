@@ -39,6 +39,9 @@ class PipelineConfig:
     # image-quality router: pages noisier than this (Immerkaer sigma) use the `noisy` voting config
     noise_threshold: float = 99.0
     noisy: dict | None = None
+    # speed cascade: the `cheap` sources run first; if their texts agree (similarity >= tau) their vote
+    # is final and the expensive sources are skipped (bench/tune_cascade.py)
+    cascade: dict | None = None
 
     def for_image(self, sigma: float) -> "PipelineConfig":
         """The config to use for an image with this noise level (word prediction settings are shared)."""
@@ -132,8 +135,11 @@ def english_share(lines, predictor) -> float:
 class PipelineEngine:
     name = "pipeline"
 
-    def __init__(self, cfg: PipelineConfig | None = None):
+    MODES = {"accurate": None, "balanced": 0.98, "fast": 0.85}  # cascade tau per mode
+
+    def __init__(self, cfg: PipelineConfig | None = None, mode: str = "balanced"):
         self.cfg = cfg or PipelineConfig.load()
+        self.mode = mode
         self.engines: dict = {}
         self.predictor = None
         if self.cfg.use_lm:
@@ -141,8 +147,30 @@ class PipelineEngine:
             self.predictor = WordPredictor(**self.cfg.lm_params)
 
     def recognize(self, image: Image.Image) -> str:
-        image, self.last_fixes = auto_fix(image)  # sideways / upside-down / inverted / dark pages
+        seed: dict = {}  # auto_fix's own PP-OCRv6-small reading, reused below
+        image, self.last_fixes = auto_fix(image, seed)  # sideways / upside-down / inverted / dark pages
         cfg = self.cfg.for_image(noise_level(to_gray(image)))
         variants: dict = {}
-        readings = {s: read_source(s, image, self.engines, variants) for s in cfg.sources}
+        tau = self.MODES[self.mode]
+        cheap = (cfg.cascade or {}).get("cheap", [])
+        if tau is not None and cheap and cfg is self.cfg:
+            readings = {s: seed[s] if s in seed else read_source(s, image, self.engines, variants) for s in cheap}
+            if cascade_agreement(readings, cheap) >= tau:
+                quick = PipelineConfig(**{**cfg.__dict__, "sources": {s: cfg.sources.get(s, 1.0) for s in cheap}})
+                return fuse(readings, quick, self.predictor)
+        else:
+            readings = {k: v for k, v in seed.items() if k in cfg.sources}
+        for s in cfg.sources:
+            if s not in readings:
+                readings[s] = read_source(s, image, self.engines, variants)
         return fuse(readings, cfg, self.predictor)
+
+
+def cascade_agreement(readings: dict, cheap: list[str]) -> float:
+    """Lowest character similarity between the cheap readers' texts (0 if any read nothing)."""
+    from rapidfuzz.distance import Levenshtein
+
+    texts = [" ".join(w for line in readings.get(s, []) for w, _ in line) for s in cheap]
+    if not all(texts):
+        return 0.0
+    return min(Levenshtein.normalized_similarity(texts[0], t) for t in texts[1:])

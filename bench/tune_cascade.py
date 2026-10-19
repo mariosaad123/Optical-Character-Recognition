@@ -13,22 +13,10 @@ import argparse
 import json
 from pathlib import Path
 
-from rapidfuzz.distance import Levenshtein
-
 from bench.metrics import score
 from bench.tune_pipeline import load
 from ocr_engine.pipeline import CONFIG_PATH, PipelineConfig, fuse
-
-
-def text_of(lines) -> str:
-    return " ".join(w for line in lines for w, _ in line)
-
-
-def agreement(readings: dict, cheap: list[str]) -> float:
-    texts = [text_of(readings.get(s, [])) for s in cheap]
-    if not all(texts):
-        return 0.0
-    return min(Levenshtein.normalized_similarity(texts[0], t) for t in texts[1:])
+from ocr_engine.pipeline import cascade_agreement as agreement
 
 
 def main():

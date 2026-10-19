@@ -25,7 +25,10 @@ VARIANTS = {
 
 
 class PPOCREngine(OCREngine):
-    def __init__(self, variant: str = "ppocr6m", use_cls: bool = True):
+    # use_cls (PaddleOCR's 180-degree line classifier) is off: on upright pages it flips correct lines
+    # (dev accuracy with/without: synthetic 93.86/94.80%, CORD 91.45/92.55%, SROIE 92.72/93.17%), and
+    # upside-down pages are handled once for the whole page by preprocess.auto_fix.
+    def __init__(self, variant: str = "ppocr6m", use_cls: bool = False):
         from rapidocr import RapidOCR
 
         self.name = variant
