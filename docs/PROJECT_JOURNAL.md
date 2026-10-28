@@ -425,3 +425,33 @@ classifier, which used to rescue some upside-down lines, is off; auto_fix makes 
 
 **Phase 0 status: complete.** Remaining ideas (larger real training sets, GPU-trained recognizers) are
 carried into the later phases.
+
+---
+
+## Phase 1: handwriting benchmark
+
+### P1.1 Data (built by `bench/import_handwriting.py`)
+
+- **GNHK** (GoodNotes Handwriting Kollection, CC BY 4.0): English handwriting photographed with phones by
+  writers in many countries; word polygons, line indices, H/P (handwritten/printed) types and special
+  tokens (%math%, %SC% scribbles, ...). Repackaged page-level copy from the HF Hub.
+  - pages: everything that is not an annotated plain-text word (special tokens, unannotated areas) is
+    painted with the paper colour; reference = plain-text words by line. dev 40 pages (from the GNHK train
+    split, fixed seed), test 172 pages (GNHK test split).
+  - lines: one crop per line without special tokens; neighbouring lines reaching into the crop are
+    painted over (first version left parts of adjacent lines visible - fixed). dev 571, test 2,057 lines.
+  - the other 475 GNHK train pages are reserved for training (`data/hw_gnhk_train_pages.json`).
+  - note: GNHK transcribes what the writer actually wrote, including misspellings.
+- **IAM** lines (research use, evaluation only): dev 300 (validation), test 600 (test), fixed seed. IAM
+  transcripts are tokenized ("it 's a good start ."); they are de-tokenized so natural punctuation spacing
+  is not counted as an error.
+
+### P1.2 Readers added
+
+`ocr_engine/engines/hw_engines.py`: TrOCR base/large handwritten (MIT, line recognizer; pages are split
+into lines by the PP-OCRv6 detector) and GLM-OCR (MIT, 1.3B VLM, whole page or line), both with a
+confidence from token probabilities.
+
+Infrastructure lesson: two parallel workers each holding GLM-OCR (5 GB in fp32) plus both TrOCR models
+exceeded the 15 GB RAM and the machine swapped (50 lines in 2 h). Neural readers are now cached one model
+at a time with all cores (per line: GLM-OCR ~3 s, TrOCR base ~5 s, TrOCR large ~7 s with 4-beam search).
