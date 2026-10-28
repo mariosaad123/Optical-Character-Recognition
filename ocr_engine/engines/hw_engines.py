@@ -18,7 +18,7 @@ from PIL import Image
 from .base import OCREngine
 from .rapidocr_engine import _reading_order
 
-torch.set_num_threads(int(os.environ.get("OCR_TORCH_THREADS", str(torch.get_num_threads()))))
+torch.set_num_threads(int(os.environ.get("OCR_TORCH_THREADS", str(os.cpu_count() or 4))))
 
 def detokenize(text: str) -> str:
     """TrOCR learned IAM's tokenized transcripts ("it 's a good start ."); write natural text instead."""

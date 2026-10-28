@@ -150,10 +150,14 @@ def build_gnhk(cache: Path, dev_pages: int, seed: int) -> None:
 
 
 def build_iam(cache: Path, n_dev: int, n_test: int, seed: int) -> None:
-    for split, name, n in (("validation", "dev", n_dev), ("test", "test", n_test)):
-        df = pd.read_parquet(fetch(IAM.format(split=split), cache / f"iam_{split}.parquet"))
-        idx = sorted(random.Random(seed).sample(range(len(df)), min(n, len(df))))
-        items = [(f"iam_{split}_{i:05d}.png", Image.open(io.BytesIO(df.image[i]["bytes"])).convert("RGB"),
+    # IAM's validation lines were in TrOCR's training data (TrOCR-large: 99.7% there vs 96.1% on test),
+    # so dev is drawn from the test split too, disjoint from the held-out test lines.
+    df = pd.read_parquet(fetch(IAM.format(split="test"), cache / "iam_test.parquet"))
+    test = sorted(random.Random(seed).sample(range(len(df)), min(n_test, len(df))))
+    rest = sorted(set(range(len(df))) - set(test))
+    dev = sorted(random.Random(seed + 1).sample(rest, min(n_dev, len(rest))))
+    for name, idx in (("dev", dev), ("test", test)):
+        items = [(f"iam_test_{i:05d}.png", Image.open(io.BytesIO(df.image[i]["bytes"])).convert("RGB"),
                   detokenize(df.text[i])) for i in idx]
         _write(Path(f"data/hw_iam_{name}"), items, "iam_line")
 

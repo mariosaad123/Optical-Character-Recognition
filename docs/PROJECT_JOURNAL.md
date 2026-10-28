@@ -442,7 +442,8 @@ carried into the later phases.
     painted over (first version left parts of adjacent lines visible - fixed). dev 571, test 2,057 lines.
   - the other 475 GNHK train pages are reserved for training (`data/hw_gnhk_train_pages.json`).
   - note: GNHK transcribes what the writer actually wrote, including misspellings.
-- **IAM** lines (research use, evaluation only): dev 300 (validation), test 600 (test), fixed seed. IAM
+- **IAM** lines (research use, evaluation only): test 600 lines and dev 300 other lines, both from the
+  IAM test split (fixed seed, disjoint; see P1.3 for why dev is not the validation split). IAM
   transcripts are tokenized ("it 's a good start ."); they are de-tokenized so natural punctuation spacing
   is not counted as an error.
 
@@ -455,3 +456,20 @@ confidence from token probabilities.
 Infrastructure lesson: two parallel workers each holding GLM-OCR (5 GB in fp32) plus both TrOCR models
 exceeded the 15 GB RAM and the machine swapped (50 lines in 2 h). Neural readers are now cached one model
 at a time with all cores (per line: GLM-OCR ~3 s, TrOCR base ~5 s, TrOCR large ~7 s with 4-beam search).
+
+### P1.3 Leakage check: TrOCR has seen IAM's validation lines
+
+First baselines on IAM validation lines looked too good: TrOCR-large 99.69% character accuracy, 1.13%
+WER, better than its own paper (CER ~3.4% on IAM test). Same readers on 100 IAM test lines:
+
+| Reader | IAM validation (300) | IAM test (100) |
+|---|---|---|
+| TrOCR-large | 99.69% / WER 1.13% | 96.14% / WER 11.10% |
+| GLM-OCR | 96.46% / WER 18.33% | 96.65% / WER 15.24% |
+
+GLM-OCR is the same on both; TrOCR drops 3.5 points, matching its paper. Conclusion: IAM validation was in
+TrOCR's training data. Any weight tuned there would over-trust TrOCR. Fix: the IAM dev set is now 300
+lines drawn from the IAM test split, disjoint from the 600 held-out test lines (test set unchanged,
+verified by checksum). Lesson for the report: always check a public model against a split it cannot have
+trained on before trusting a dev number.
+
