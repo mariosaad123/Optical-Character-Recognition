@@ -473,3 +473,17 @@ lines drawn from the IAM test split, disjoint from the 600 held-out test lines (
 verified by checksum). Lesson for the report: always check a public model against a split it cannot have
 trained on before trusting a dev number.
 
+
+### P1.4 Page-level baselines (GNHK dev, 40 whole phone-photo pages)
+
+| Reader | Char accuracy | WER | Bag-of-words F1 | Median CER |
+|---|---|---|---|---|
+| GLM-OCR (whole page in one pass) | **71.38%** | **42.52%** | **67.3%** | 18.8% |
+| PP-OCRv6 medium (printed-text reader) | 65.71% | 56.69% | 50.5% | 25.2% |
+| TrOCR-large (PP-OCRv6 line detector + TrOCR per line) | 58.95% | 65.12% | 39.7% | 32.9% |
+| Our Tesseract eng_ft3last | 32.81% | 106.30% | 9.7% | 67.9% |
+
+First fusion probe (word voting, untuned weights glm 1 / ppocr 0.7 / trocr 0.6): 72.20%, +0.8 over
+GLM-OCR alone; character voting gave less (71.82%). Real phone-photo handwriting pages are far harder
+than lines: the line detector splits or merges handwritten lines, and page-level errors include reading
+order. Caching cost: 40 pages took ~1 h 50 min on 4 CPU cores for the four readers.
