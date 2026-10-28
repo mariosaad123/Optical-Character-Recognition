@@ -65,6 +65,12 @@ def _engine(name: str):
     if name.startswith("ppocr"):
         from .engines.ppocr_engine import PPOCREngine
         return PPOCREngine(name)
+    if name.startswith("trocr"):
+        from .engines.hw_engines import TrOCREngine
+        return TrOCREngine(name)
+    if name.startswith("glm-ocr"):
+        from .engines.hw_engines import GLMOCREngine
+        return GLMOCREngine(name)
     raise ValueError(name)
 
 
