@@ -20,6 +20,12 @@ from .rapidocr_engine import _reading_order
 
 torch.set_num_threads(int(os.environ.get("OCR_TORCH_THREADS", str(torch.get_num_threads()))))
 
+def detokenize(text: str) -> str:
+    """TrOCR learned IAM's tokenized transcripts ("it 's a good start ."); write natural text instead."""
+    from bench.import_handwriting import detokenize as _detok
+    return _detok(text)
+
+
 TROCR = {"trocr-base": "microsoft/trocr-base-handwritten", "trocr-large": "microsoft/trocr-large-handwritten"}
 _detector = None
 
@@ -79,7 +85,7 @@ class TrOCREngine(_LineReader):
                                   num_beams=self.num_beams, output_scores=True, return_dict_in_generate=True)
         text = self.proc.batch_decode(out.sequences, skip_special_tokens=True)[0].strip()
         conf = float(torch.exp(out.sequences_scores[0])) if self.num_beams > 1 else 1.0
-        return text, conf
+        return detokenize(text), conf
 
 
 class GLMOCREngine(_LineReader):
